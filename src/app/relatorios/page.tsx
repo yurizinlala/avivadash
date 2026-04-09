@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { getReports } from "@/lib/actions/report-actions";
 import { RelatoriosClient } from "./relatorios-client";
 

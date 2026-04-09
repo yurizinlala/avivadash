@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { getCells, getCellStats } from "@/lib/actions/cell-actions";
 import { CelulasClient } from "./celulas-client";
 

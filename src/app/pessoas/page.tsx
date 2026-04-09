@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { getPersons, getPersonStats } from "@/lib/actions/person-actions";
 import { getCellsSimple } from "@/lib/actions/cell-actions";
 import { PessoasClient } from "./pessoas-client";

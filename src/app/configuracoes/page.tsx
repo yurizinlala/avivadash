@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { getCurrentUser } from "@/lib/auth";
 import { ConfiguracoesClient } from "./configuracoes-client";
 

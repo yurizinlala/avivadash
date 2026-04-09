@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/prisma";
 import { CellMap } from "@/components/cell-map";
 import { MapPin } from "lucide-react";
