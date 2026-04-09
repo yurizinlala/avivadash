@@ -66,20 +66,25 @@ export async function destroySession(): Promise<void> {
 
 // ─── Auth Actions ───
 export async function login(email: string, password: string) {
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return { success: false, error: "Credenciais inválidas." };
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return { success: false, error: "Credenciais inválidas." };
 
-  const valid = await verifyPassword(password, user.passwordHash);
-  if (!valid) return { success: false, error: "Credenciais inválidas." };
+    const valid = await verifyPassword(password, user.passwordHash);
+    if (!valid) return { success: false, error: "Credenciais inválidas." };
 
-  await createSession({
-    userId: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-  });
+    await createSession({
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    });
 
-  return { success: true };
+    return { success: true };
+  } catch (error: any) {
+    console.error("LOGIN ERROR:", error);
+    return { success: false, error: `Erro no Servidor: ${error.message || String(error)}` };
+  }
 }
 
 export async function logout() {
