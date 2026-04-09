@@ -1,0 +1,137 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ============================================
+// AUTH
+// ============================================
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("ADMIN") // ADMIN | PASTOR | LIDER
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+// ============================================
+// IEAB GESTÃO — Data Models (SQLite compatible)
+// ============================================
+
+model Person {
+  id            String   @id @default(cuid())
+  fullName      String
+  email         String?
+  phone         String?
+  birthDate     DateTime?
+  maritalStatus String?  // SOLTEIRO | CASADO | DIVORCIADO | VIUVO
+  weddingDate   DateTime?
+  profession    String?
+  personType    String   @default("VISITANTE") // MEMBRO | VISITANTE | CONGREGADO
+  memberStatus  String   @default("ATIVO")     // ATIVO | INATIVO | TRANSFERIDO | FALECIDO
+
+  // Ecclesiastical data
+  isBaptized     Boolean  @default(false)
+  baptismDate    DateTime?
+  conversionDate DateTime?
+
+  // Address
+  cep          String?
+  street       String?
+  number       String?
+  complement   String?
+  neighborhood String?
+  city         String?
+  state        String?
+
+  // Relationships
+  cellId String?
+  cell   Cell?   @relation(fields: [cellId], references: [id])
+
+  // Metadata
+  notes     String?
+  photoUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("people")
+}
+
+model Cell {
+  id          String  @id @default(cuid())
+  name        String
+  leaderName  String
+  leaderPhone String?
+  address     String?
+  dayOfWeek   String?
+  time        String?
+  isActive    Boolean @default(true)
+
+  // Geolocation (for map)
+  latitude  Float?
+  longitude Float?
+
+  // Relationships
+  members Person[]
+
+  // Metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("cells")
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  date        DateTime
+  time        String?
+  location    String?
+  type        String?  // culto | reuniao | congresso
+  isRecurrent Boolean  @default(false)
+
+  // Metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("events")
+}
+
+model MonthlyReport {
+  id             String   @id @default(cuid())
+  referenceMonth DateTime @unique
+
+  // Attendance
+  totalMembers     Int   @default(0)
+  totalVisitors    Int   @default(0)
+  totalBaptisms    Int   @default(0)
+  totalConversions Int   @default(0)
+  totalTransfers   Int   @default(0)
+
+  // Financial
+  totalTithes      Float @default(0)
+  totalOfferings   Float @default(0)
+  totalOtherIncome Float @default(0)
+  totalExpenses    Float @default(0)
+
+  notes       String?
+  generatedAt DateTime?
+
+  // Metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("monthly_reports")
+}
