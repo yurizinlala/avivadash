@@ -29,31 +29,40 @@ O **AvivaDash** é uma plataforma moderna e completa desenvolvida especificament
    ```bash
    npm install --legacy-peer-deps
    ```
-3. O banco de dados SQLite (`dev.db`) não é versionado. Você deve criar as tabelas pela primeira vez rodando as migrations e a seed para construir a base:
-   ```bash
-   npx prisma migrate dev --name init
-   npx prisma db seed
-   ```
-4. Inicie o servidor Next.js:
-   ```bash
-   npm run dev
-   ```
-*Acesse `http://localhost:3000`. O login padrão de administrador deve aparecer no console ou estar no arquivo seed.*
-
-## 🚀 Como fazer o Deploy e Produção (Supabase/Vercel)
-
-Para uso em produção, o SQLite não é recomendado pois provedores Serverless apagam arquivos estáticos a cada reboot. É recomendada a migração para o **PostgreSQL**.
-
-### Passos de Configuração com PostgreSQL:
-1. Altere o `provider` no seu `prisma/schema.prisma` de `"sqlite"` para `"postgresql"`.
-2. Adicione no arquivo `.env` as variáveis de conexão com o seu banco Postgres (como o fornecido pelo **Supabase**):
+3. Crie um arquivo `.env` na raiz do projeto com suas credenciais do **PostgreSQL** para desenvolvimento. (Você também deverá criá-las no Vercel no deploy produtivo).
    ```env
    DATABASE_URL="postgresql://usuario:senha@xyz.supabase.co:5432/postgres?pgbouncer=true"
    DIRECT_URL="postgresql://usuario:senha@xyz.supabase.co:5432/postgres"
    JWT_SECRET="<Sua-Secreta-Forte>"
    ```
-3. Exclua a pasta antiga `prisma/migrations`, e rode:
+4. Atualize e popule o banco de dados via Prisma 7 (que agora utiliza o pg driver):
    ```bash
-   npx prisma migrate dev --name init_postgres
+   npx prisma db push
+   npx prisma db seed
    ```
-4. Hospede o front-end via Vercel e insira essas variáveis no painel da Vercel!
+5. Para gerar o Super Administrador do sistema, execute este seed extra:
+   ```bash
+   npx tsx prisma/seed-user.ts
+   ```
+   *O Email/Senha será gerado como log no terminal para fazer seu 1º login.*
+6. Inicie o servidor Next.js:
+   ```bash
+   npm run dev
+   ```
+*Acesse `http://localhost:3000`.*
+
+## 🚀 Como fazer o Deploy e Produção (Supabase/Vercel)
+
+Para uso em produção, o **PostgreSQL** hospedado no Supabase já está acoplado usando os drivers adequados de pool (`pg` + `Prisma 7`).
+
+### Passos de Configuração (Vercel):
+1. Hospede o projeto conectando seu repositório GitHub através do portal da Vercel.
+2. Na aba de `Environment Variables` insira suas 3 chaves recém criadas:
+   - `DATABASE_URL` 
+   - `DIRECT_URL`
+   - `JWT_SECRET` (não use valores literais como "dev", crie uma random string forte)
+3. Na área *Build Command* no setup da Vercel, preencha:
+   ```bash
+   npx prisma generate && next build
+   ```
+4. Finalize o Deploy. Ao término, você já pode acessar a página gerada com o login do Administrador que você rodou no passo anterior!
