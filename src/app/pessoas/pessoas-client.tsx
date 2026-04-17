@@ -45,7 +45,8 @@ import { createPerson, updatePerson, deletePerson } from "@/lib/actions/person-a
 import type { PersonFormData } from "@/lib/validations/person";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { EmptyState } from "@/components/empty-state";
-import { maskPhone, maskCep } from "@/lib/masks";
+import { maskPhone, maskCep, maskCpf } from "@/lib/masks";
+import { personSchema } from "@/lib/validations/person";
 import { uploadPersonPhoto } from "@/lib/actions/upload-actions";
 
 type PersonType = "MEMBRO" | "VISITANTE" | "CONGREGADO";
@@ -54,6 +55,7 @@ type PersonStatus = "ATIVO" | "INATIVO" | "TRANSFERIDO" | "FALECIDO";
 interface PersonRow {
   id: string;
   fullName: string;
+  cpf: string | null;
   email: string | null;
   phone: string | null;
   birthDate: Date | null;
@@ -205,36 +207,118 @@ export function PessoasClient({
 
   const hasActiveFilters = !!(currentStatus || currentBaptized || currentCell);
 
+  const getInitialFormState = (person: any) => ({
+    fullName: person?.fullName || "",
+    cpf: person?.cpf || "",
+    email: person?.email || "",
+    phone: person?.phone || "",
+    birthDate: formatDateForInput(person?.birthDate ?? null) || "",
+    maritalStatus: person?.maritalStatus || "SOLTEIRO",
+    weddingDate: formatDateForInput(person?.weddingDate ?? null) || "",
+    profession: person?.profession || "",
+    personType: person?.personType || "VISITANTE",
+    memberStatus: person?.memberStatus || "ATIVO",
+    isBaptized: person?.isBaptized ?? false,
+    baptismDate: formatDateForInput(person?.baptismDate ?? null) || "",
+    conversionDate: formatDateForInput(person?.conversionDate ?? null) || "",
+    cep: person?.cep || "",
+    street: person?.street || "",
+    number: person?.number || "",
+    complement: person?.complement || "",
+    neighborhood: person?.neighborhood || "",
+    city: person?.city || "",
+    state: person?.state || "",
+    cellId: person?.cellId || "",
+    notes: person?.notes || "",
+  });
+
+  const [formData, setFormData] = React.useState<any>(getInitialFormState(selectedPerson));
+  const [formErrors, setFormErrors] = React.useState<Record<string, string[]>>({});
+
+  React.useEffect(() => {
+    setFormData(getInitialFormState(selectedPerson));
+    setFormErrors({});
+  }, [selectedPerson]);
+
+  const updateField = (field: string, value: any) => {
+    const newData = { ...formData, [field]: value };
+    setFormData(newData);
+    
+    // Only parse if form is actively being edited
+    const parsed = personSchema.safeParse(newData);
+    if (!parsed.success) {
+      setFormErrors(parsed.error.flatten().fieldErrors);
+    } else {
+      setFormErrors({});
+    }
+  };
+
+  const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const masked = maskCep(raw);
+    let newData = { ...formData, cep: masked };
+    
+    const unmasked = masked.replace(/\D/g, '');
+    if (unmasked.length === 8) {
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${unmasked}/json/`);
+        const data = await res.json();
+        if (!data.erro) {
+          newData = {
+            ...newData,
+            street: data.logradouro || '',
+            neighborhood: data.bairro || '',
+            city: data.localidade || '',
+            state: data.uf || ''
+          };
+        }
+      } catch (err) {
+        console.error('Error fetching CEP:', err);
+      }
+    }
+    
+    setFormData(newData);
+    const parsed = personSchema.safeParse(newData);
+    setFormErrors(parsed.success ? {} : parsed.error.flatten().fieldErrors);
+  };
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
 
-    const form = e.currentTarget;
-    const fd = new FormData(form);
-
     const data: PersonFormData = {
-      fullName: fd.get("fullName") as string,
-      email: fd.get("email") as string,
-      phone: fd.get("phone") as string,
-      birthDate: fd.get("birthDate") as string,
-      maritalStatus: (fd.get("maritalStatus") as PersonFormData["maritalStatus"]) || undefined,
-      weddingDate: fd.get("weddingDate") as string,
-      profession: fd.get("profession") as string,
-      personType: (fd.get("personType") as PersonFormData["personType"]) || "VISITANTE",
-      memberStatus: (fd.get("memberStatus") as PersonFormData["memberStatus"]) || "ATIVO",
-      isBaptized: fd.get("isBaptized") === "on",
-      baptismDate: fd.get("baptismDate") as string,
-      conversionDate: fd.get("conversionDate") as string,
-      cep: fd.get("cep") as string,
-      street: fd.get("street") as string,
-      number: fd.get("number") as string,
-      complement: fd.get("complement") as string,
-      neighborhood: fd.get("neighborhood") as string,
-      city: fd.get("city") as string,
-      state: fd.get("state") as string,
-      cellId: (fd.get("cellId") as string) || "",
-      notes: fd.get("notes") as string,
+      fullName: formData.fullName,
+      cpf: formData.cpf,
+      email: formData.email,
+      phone: formData.phone,
+      birthDate: formData.birthDate,
+      maritalStatus: formData.maritalStatus || undefined,
+      weddingDate: formData.weddingDate,
+      profession: formData.profession,
+      personType: formData.personType || "VISITANTE",
+      memberStatus: formData.memberStatus || "ATIVO",
+      isBaptized: formData.isBaptized,
+      baptismDate: formData.baptismDate,
+      conversionDate: formData.conversionDate,
+      cep: formData.cep,
+      street: formData.street,
+      number: formData.number,
+      complement: formData.complement,
+      neighborhood: formData.neighborhood,
+      city: formData.city,
+      state: formData.state,
+      cellId: formData.cellId === "none" ? "" : formData.cellId,
+      notes: formData.notes,
     };
+
+    const parsed = personSchema.safeParse(data);
+    if (!parsed.success) {
+      const fieldErrors = parsed.error.flatten().fieldErrors;
+      const firstError = Object.values(fieldErrors).flat()[0];
+      toast.error(firstError || "Erro de validação, verifique os campos.");
+      setSaving(false);
+      return;
+    }
 
     try {
       const result = selectedPerson
@@ -294,8 +378,11 @@ export function PessoasClient({
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-1">
+            Membros e Visitantes
+          </p>
           <h1 className="text-2xl font-heading font-bold text-foreground tracking-tight">
-            Pessoas
+            Gestão de Pessoas
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Diretório e CRM da comunidade
@@ -435,7 +522,13 @@ export function PessoasClient({
                 onValueChange={(v) => handleFilterChange("status", v === "all" ? "" : (v ?? ""))}
               >
                 <SelectTrigger className="h-9 rounded-xl bg-surface-high border-0">
-                  <SelectValue placeholder="Todos os status" />
+                  <SelectValue>
+                    {currentStatus === "ATIVO" ? "Ativo" :
+                     currentStatus === "INATIVO" ? "Inativo" :
+                     currentStatus === "TRANSFERIDO" ? "Transferido" :
+                     currentStatus === "FALECIDO" ? "Falecido" :
+                     "Todos os status"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os status</SelectItem>
@@ -453,7 +546,11 @@ export function PessoasClient({
                 onValueChange={(v) => handleFilterChange("baptized", v === "all" ? "" : (v ?? ""))}
               >
                 <SelectTrigger className="h-9 rounded-xl bg-surface-high border-0">
-                  <SelectValue placeholder="Todos" />
+                  <SelectValue>
+                    {currentBaptized === "yes" ? "Batizados" :
+                     currentBaptized === "no" ? "Não batizados" :
+                     "Todos"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
@@ -469,7 +566,13 @@ export function PessoasClient({
                 onValueChange={(v) => handleFilterChange("cell", v === "all" ? "" : (v ?? ""))}
               >
                 <SelectTrigger className="h-9 rounded-xl bg-surface-high border-0">
-                  <SelectValue placeholder="Todas as células" />
+                  <SelectValue>
+                    {currentCell && currentCell !== "all" && currentCell !== "none"
+                      ? cells.find(c => c.id === currentCell)?.name || "Célula"
+                      : currentCell === "none"
+                      ? "Sem célula"
+                      : "Todas as células"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas as células</SelectItem>
@@ -542,11 +645,11 @@ export function PessoasClient({
                   <Badge
                     variant="secondary"
                     className={cn(
-                      "rounded-md text-[0.65rem] font-semibold uppercase border-0",
+                      "rounded-md text-[0.65rem] font-semibold capitalize border-0",
                       TYPE_STYLES[person.personType as PersonType] ?? ""
                     )}
                   >
-                    {person.personType}
+                    {person.personType.toLowerCase()}
                   </Badge>
                 </div>
 
@@ -565,11 +668,11 @@ export function PessoasClient({
                   <Badge
                     variant="secondary"
                     className={cn(
-                      "rounded-md text-[0.65rem] font-semibold uppercase border-0",
+                      "rounded-md text-[0.65rem] font-semibold capitalize border-0",
                       STATUS_STYLES[person.memberStatus] ?? ""
                     )}
                   >
-                    {person.memberStatus}
+                    {person.memberStatus.toLowerCase()}
                   </Badge>
                 </div>
 
@@ -738,66 +841,98 @@ export function PessoasClient({
 
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-xs text-muted-foreground">
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.fullName && "text-red-500")}>
                       Nome Completo *
                     </Label>
                     <Input
                       name="fullName"
                       required
                       placeholder="Ex: João da Silva"
-                      defaultValue={selectedPerson?.fullName}
-                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      value={formData.fullName}
+                      onChange={(e) => updateField('fullName', e.target.value)}
+                      className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.fullName && "border border-red-500 focus-visible:ring-red-500")}
                     />
+                    {formErrors.fullName && <p className="text-red-500 text-xs mt-1">{formErrors.fullName[0]}</p>}
                   </div>
 
                   <div>
-                    <Label className="text-xs text-muted-foreground">E-mail</Label>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.cpf && "text-red-500")}>
+                      CPF
+                    </Label>
+                    <Input
+                      name="cpf"
+                      placeholder="000.000.000-00"
+                      value={formData.cpf}
+                      onChange={(e) => updateField('cpf', maskCpf(e.target.value))}
+                      className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.cpf && "border border-red-500 focus-visible:ring-red-500")}
+                    />
+                    {formErrors.cpf && <p className="text-red-500 text-xs mt-1">{formErrors.cpf[0]}</p>}
+                  </div>
+
+                  <div>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.email && "text-red-500")}>E-mail</Label>
                     <Input
                       name="email"
                       type="email"
                       placeholder="email@exemplo.com"
-                      defaultValue={selectedPerson?.email ?? ""}
-                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      value={formData.email}
+                      onChange={(e) => updateField('email', e.target.value)}
+                      className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.email && "border border-red-500 focus-visible:ring-red-500")}
                     />
+                    {formErrors.email && <p className="text-red-500 text-xs mt-1">{formErrors.email[0]}</p>}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.phone && "text-red-500")}>
                         WhatsApp
                       </Label>
                       <Input
                         name="phone"
                         placeholder="(11) 00000-0000"
-                        defaultValue={selectedPerson?.phone ?? ""}
-                        onChange={(e) => { e.target.value = maskPhone(e.target.value); }}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        value={formData.phone}
+                        onChange={(e) => updateField('phone', maskPhone(e.target.value))}
+                        className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.phone && "border border-red-500 focus-visible:ring-red-500")}
                       />
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.birthDate && "text-red-500")}>
                         Nascimento
                       </Label>
                       <Input
                         name="birthDate"
                         type="date"
-                        defaultValue={formatDateForInput(selectedPerson?.birthDate ?? null)}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        value={formData.birthDate}
+                        onChange={(e) => updateField('birthDate', e.target.value)}
+                        className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.birthDate && "border border-red-500 focus-visible:ring-red-500")}
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.maritalStatus && "text-red-500")}>
                         Estado Civil
                       </Label>
                       <Select
                         name="maritalStatus"
-                        defaultValue={selectedPerson?.maritalStatus ?? ""}
+                        value={formData.maritalStatus}
+                        onValueChange={(v) => {
+                          const newData = { ...formData, maritalStatus: v };
+                          if (v === 'SOLTEIRO') newData.weddingDate = "";
+                          setFormData(newData);
+                          // trigger validation
+                          const parsed = personSchema.safeParse(newData);
+                          setFormErrors(parsed.success ? {} : parsed.error.flatten().fieldErrors);
+                        }}
                       >
-                        <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0">
-                          <SelectValue placeholder="Selecione" />
+                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.maritalStatus && "border border-red-500")}>
+                          <SelectValue placeholder="Selecione">
+                            {formData.maritalStatus === "SOLTEIRO" && "Solteiro(a)"}
+                            {formData.maritalStatus === "CASADO" && "Casado(a)"}
+                            {formData.maritalStatus === "DIVORCIADO" && "Divorciado(a)"}
+                            {formData.maritalStatus === "VIUVO" && "Viúvo(a)"}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="SOLTEIRO">Solteiro(a)</SelectItem>
@@ -808,27 +943,35 @@ export function PessoasClient({
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.weddingDate && "text-red-500")}>
                         Data Casamento
                       </Label>
                       <Input
                         name="weddingDate"
                         type="date"
-                        defaultValue={formatDateForInput(selectedPerson?.weddingDate ?? null)}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        disabled={formData.maritalStatus === 'SOLTEIRO'}
+                        value={formData.weddingDate}
+                        onChange={(e) => updateField('weddingDate', e.target.value)}
+                        className={cn(
+                          "mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", 
+                          formData.maritalStatus === 'SOLTEIRO' && "opacity-50 cursor-not-allowed",
+                          formErrors.weddingDate && "border border-red-500 focus-visible:ring-red-500"
+                        )}
                       />
+                      {formErrors.weddingDate && <p className="text-red-500 text-xs mt-1">{formErrors.weddingDate[0]}</p>}
                     </div>
                   </div>
 
                   <div>
-                    <Label className="text-xs text-muted-foreground">
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.profession && "text-red-500")}>
                       Profissão
                     </Label>
                     <Input
                       name="profession"
                       placeholder="Ex: Engenheiro"
-                      defaultValue={selectedPerson?.profession ?? ""}
-                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      value={formData.profession}
+                      onChange={(e) => updateField('profession', e.target.value)}
+                      className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.profession && "border border-red-500 focus-visible:ring-red-500")}
                     />
                   </div>
                 </div>
@@ -846,13 +989,18 @@ export function PessoasClient({
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground">Tipo</Label>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.personType && "text-red-500")}>Tipo</Label>
                       <Select
                         name="personType"
-                        defaultValue={selectedPerson?.personType ?? "VISITANTE"}
+                        value={formData.personType}
+                        onValueChange={(v) => updateField('personType', v)}
                       >
-                        <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0">
-                          <SelectValue />
+                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.personType && "border border-red-500")}>
+                          <SelectValue>
+                            {formData.personType === "MEMBRO" && "Membro"}
+                            {formData.personType === "VISITANTE" && "Visitante"}
+                            {formData.personType === "CONGREGADO" && "Congregado"}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="MEMBRO">Membro</SelectItem>
@@ -862,13 +1010,19 @@ export function PessoasClient({
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">Status</Label>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.memberStatus && "text-red-500")}>Status</Label>
                       <Select
                         name="memberStatus"
-                        defaultValue={selectedPerson?.memberStatus ?? "ATIVO"}
+                        value={formData.memberStatus}
+                        onValueChange={(v) => updateField('memberStatus', v)}
                       >
-                        <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0">
-                          <SelectValue />
+                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.memberStatus && "border border-red-500")}>
+                          <SelectValue>
+                            {formData.memberStatus === "ATIVO" && "Ativo"}
+                            {formData.memberStatus === "INATIVO" && "Inativo"}
+                            {formData.memberStatus === "TRANSFERIDO" && "Transferido"}
+                            {formData.memberStatus === "FALECIDO" && "Falecido"}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="ATIVO">Ativo</SelectItem>
@@ -891,46 +1045,53 @@ export function PessoasClient({
                     </div>
                     <Switch
                       name="isBaptized"
-                      defaultChecked={selectedPerson?.isBaptized ?? false}
+                      checked={formData.isBaptized}
+                      onCheckedChange={(v) => updateField('isBaptized', v)}
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.baptismDate && "text-red-500")}>
                         Data do Batismo
                       </Label>
                       <Input
                         name="baptismDate"
                         type="date"
-                        defaultValue={formatDateForInput(selectedPerson?.baptismDate ?? null)}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        value={formData.baptismDate}
+                        onChange={(e) => updateField('baptismDate', e.target.value)}
+                        className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.baptismDate && "border border-red-500 focus-visible:ring-red-500")}
                       />
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.conversionDate && "text-red-500")}>
                         Data da Conversão
                       </Label>
                       <Input
                         name="conversionDate"
                         type="date"
-                        defaultValue={formatDateForInput(selectedPerson?.conversionDate ?? null)}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        value={formData.conversionDate}
+                        onChange={(e) => updateField('conversionDate', e.target.value)}
+                        className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.conversionDate && "border border-red-500 focus-visible:ring-red-500")}
                       />
+                      {formErrors.conversionDate && <p className="text-red-500 text-xs mt-1">{formErrors.conversionDate[0]}</p>}
                     </div>
                   </div>
 
                   <div>
-                    <Label className="text-xs text-muted-foreground">Célula</Label>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.cellId && "text-red-500")}>Célula</Label>
                     <Select
                       name="cellId"
-                      defaultValue={selectedPerson?.cellId ?? ""}
+                      value={formData.cellId}
+                      onValueChange={(v) => updateField('cellId', v)}
                     >
-                      <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0">
-                        <SelectValue placeholder="Selecione uma Célula" />
+                      <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.cellId && "border border-red-500")}>
+                        <SelectValue placeholder="Selecione uma Célula">
+                          {formData.cellId ? cells.find(c => c.id === formData.cellId)?.name : "Nenhuma"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Nenhuma</SelectItem>
+                        <SelectItem value="none">Nenhuma</SelectItem>
                         {cells.map((cell) => (
                           <SelectItem key={cell.id} value={cell.id}>
                             {cell.name}
@@ -959,7 +1120,7 @@ export function PessoasClient({
                         name="cep"
                         placeholder="00000-000"
                         defaultValue={selectedPerson?.cep ?? ""}
-                        onChange={(e) => { e.target.value = maskCep(e.target.value); }}
+                        onChange={handleCepChange}
                         className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
                       />
                     </div>
@@ -994,6 +1155,31 @@ export function PessoasClient({
                         placeholder="Bairro"
                         defaultValue={selectedPerson?.neighborhood ?? ""}
                         className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2">
+                      <Label className="text-xs text-muted-foreground">
+                        Cidade
+                      </Label>
+                      <Input
+                        name="city"
+                        placeholder="Cidade"
+                        defaultValue={selectedPerson?.city ?? ""}
+                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">
+                        UF
+                      </Label>
+                      <Input
+                        name="state"
+                        placeholder="UF"
+                        maxLength={2}
+                        defaultValue={selectedPerson?.state ?? ""}
+                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 uppercase"
                       />
                     </div>
                   </div>
@@ -1048,3 +1234,4 @@ export function PessoasClient({
     </div>
   );
 }
+

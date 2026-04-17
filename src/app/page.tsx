@@ -10,16 +10,22 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { getDashboardStats } from "@/lib/actions/dashboard-actions";
+import { getCurrentUser } from "@/lib/auth";
 
 export default async function DashboardPage() {
   const stats = await getDashboardStats();
+  const user = await getCurrentUser();
+  const firstName = user?.name?.split(' ')[0] || "Líder";
 
   return (
     <div className="space-y-8">
       {/* Welcome Section */}
       <div>
+        <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-1">
+          Visão Geral
+        </p>
         <h1 className="text-2xl font-heading font-bold text-foreground tracking-tight">
-          Olá, Pastora
+          Olá, {firstName}! 👋
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           Aqui está o que está acontecendo no seu ministério hoje.
@@ -155,9 +161,10 @@ export default async function DashboardPage() {
                   .replace(".", "");
 
                 return (
-                  <div
+                  <a
+                    href={`/agenda?eventId=${event.id}`}
                     key={event.id}
-                    className="flex items-center gap-4 rounded-lg bg-surface-low p-3 transition-colors hover:bg-surface-high"
+                    className="flex items-center gap-4 rounded-lg bg-surface-low p-3 transition-colors hover:bg-surface-high cursor-pointer block"
                   >
                     <div className="flex h-12 w-12 flex-col items-center justify-center rounded-lg border border-border bg-card text-center">
                       <span className="text-sm font-heading font-bold text-primary leading-none">
@@ -176,7 +183,7 @@ export default async function DashboardPage() {
                         {event.time} • {event.location}
                       </div>
                     </div>
-                  </div>
+                  </a>
                 );
               })
             )}
@@ -214,22 +221,22 @@ export default async function DashboardPage() {
         </div>
 
         {/* Visitantes Pendentes */}
-        <div className="relative overflow-hidden rounded-xl bg-gold-muted dark:bg-gold-muted p-6 text-white">
+        <div className="relative overflow-hidden rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 p-6">
           <div className="relative z-10">
-            <h3 className="text-lg font-heading font-bold text-gold dark:text-gold">
+            <h3 className="text-lg font-heading font-bold text-amber-900 dark:text-amber-400">
               Visitantes Pendentes
             </h3>
-            <p className="mt-1 text-sm text-white/70 max-w-xs">
+            <p className="mt-1 text-sm text-amber-800 dark:text-amber-200/70 max-w-xs">
               {stats.recentVisitors} visitantes recentes aguardam acompanhamento pastoral.
             </p>
             <a
               href="/pessoas?tab=visitantes"
-              className="mt-4 inline-block rounded-lg bg-white/15 backdrop-blur-sm px-4 py-2 text-sm font-medium text-gold hover:bg-white/25 transition-colors"
+              className="mt-4 inline-block rounded-lg bg-amber-200/50 dark:bg-amber-900/50 backdrop-blur-sm px-4 py-2 text-sm font-medium text-amber-900 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/80 transition-colors"
             >
               Ver Todos
             </a>
           </div>
-          <AlertCircle className="absolute right-4 bottom-4 h-20 w-20 text-gold/15" />
+          <AlertCircle className="absolute right-4 bottom-4 h-20 w-20 text-amber-900/5 dark:text-amber-500/10" />
         </div>
       </div>
     </div>

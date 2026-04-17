@@ -24,6 +24,7 @@ export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, not
   const [loggingOut, setLoggingOut] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
   const [dismissedIds, setDismissedIds] = React.useState<Set<string>>(new Set());
+  const [hydrated, setHydrated] = React.useState(false);
   const bellRef = React.useRef<HTMLDivElement>(null);
 
   // Close notification panel on outside click
@@ -34,6 +35,16 @@ export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, not
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
+
+    // Hydrate dismissed notifications from localStorage
+    try {
+      const stored = localStorage.getItem("avivadash_dismissed_notifications");
+      if (stored) {
+        setDismissedIds(new Set(JSON.parse(stored)));
+      }
+    } catch {}
+    setHydrated(true);
+
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
@@ -44,16 +55,18 @@ export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, not
     router.refresh();
   }
 
-  function handleNovoCadastro() {
-    router.push("/pessoas?new=1");
-  }
-
   function dismissNotification(id: string) {
-    setDismissedIds((prev) => new Set(prev).add(id));
+    setDismissedIds((prev) => {
+      const next = new Set(prev).add(id);
+      try {
+        localStorage.setItem("avivadash_dismissed_notifications", JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
   }
 
   const activeNotifications = notifications.filter((n) => !dismissedIds.has(n.id));
-  const notifCount = activeNotifications.length;
+  const notifCount = hydrated ? activeNotifications.length : notifications.length;
 
   const initials = userName
     ? userName
@@ -108,15 +121,6 @@ export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, not
 
       {/* Right — Actions */}
       <div className="flex items-center gap-2">
-        {/* Quick Action — "+ Novo Cadastro" */}
-        <Button
-          onClick={handleNovoCadastro}
-          className="hidden sm:inline-flex gradient-primary text-white rounded-xl px-4 py-2 text-sm font-medium gap-2 hover:opacity-90 transition-opacity shadow-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Novo Cadastro
-        </Button>
-
         {/* Notifications */}
         <div className="relative" ref={bellRef}>
           <Button

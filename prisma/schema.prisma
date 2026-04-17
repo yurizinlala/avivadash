@@ -32,6 +32,7 @@ model User {
 model Person {
   id            String   @id @default(cuid())
   fullName      String
+  cpf           String?  @unique
   email         String?
   phone         String?
   birthDate     DateTime?

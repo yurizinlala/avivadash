@@ -93,6 +93,7 @@ export async function createPerson(formData: PersonFormData) {
     await prisma.person.create({
       data: {
         fullName: data.fullName,
+        cpf: data.cpf || null,
         email: data.email || null,
         phone: data.phone || null,
         birthDate: data.birthDate ? new Date(data.birthDate) : null,
@@ -139,6 +140,7 @@ export async function updatePerson(id: string, formData: PersonFormData) {
       where: { id },
       data: {
         fullName: data.fullName,
+        cpf: data.cpf || null,
         email: data.email || null,
         phone: data.phone || null,
         birthDate: data.birthDate ? new Date(data.birthDate) : null,
