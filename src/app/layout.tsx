@@ -55,8 +55,7 @@ export default async function RootLayout({
 
   return (
     <html
-      lang="pt-BR"
-      className={`${dmSans.variable} ${spaceGrotesk.variable} h-full antialiased`}
+      lang="pt-BR" className={`${dmSans.variable} ${spaceGrotesk.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="min-h-full">

@@ -24,8 +24,7 @@ export function ThemeToggle() {
   return (
     <Button
       variant="ghost"
-      size="icon"
-      className="h-9 w-9 rounded-xl hover:bg-surface-high transition-colors"
+      size="icon" className="h-9 w-9 rounded-xl hover:bg-surface-high transition-colors"
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
       aria-label={theme === "dark" ? "Mudar para modo claro" : "Mudar para modo escuro"}
     >

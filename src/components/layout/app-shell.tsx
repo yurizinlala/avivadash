@@ -43,8 +43,7 @@ export function AppShell({ children, notifications = [], userName }: AppShellPro
       <div className="relative min-h-screen bg-background">
         {/* Mobile Overlay */}
         {mobileOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden animate-in fade-in-0 duration-200"
+          <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden animate-in fade-in-0 duration-200"
             onClick={() => setMobileOpen(false)}
           />
         )}
@@ -65,8 +64,7 @@ export function AppShell({ children, notifications = [], userName }: AppShellPro
           userName={userName}
         />
 
-        <main
-          className={cn(
+        <main className={cn(
             "min-h-[calc(100vh-4rem)] transition-all duration-300 p-4 sm:p-6 lg:p-8",
             sidebarCollapsed ? "lg:ml-[72px]" : "lg:ml-[250px]",
             "ml-0"

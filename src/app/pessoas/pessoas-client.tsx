@@ -2,15 +2,15 @@
 
 import React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import {
   Users,
   Search,
   Plus,
-  Filter,
   Phone,
   MessageSquare,
-  ChevronRight,
   User,
+  UserPlus,
   Church,
   MapPin,
   Trash2,
@@ -48,9 +48,36 @@ import { EmptyState } from "@/components/empty-state";
 import { maskPhone, maskCep, maskCpf } from "@/lib/masks";
 import { personSchema } from "@/lib/validations/person";
 import { uploadPersonPhoto } from "@/lib/actions/upload-actions";
+import { MetricCard, PageHeader } from "@/components/design-system";
 
 type PersonType = "MEMBRO" | "VISITANTE" | "CONGREGADO";
 type PersonStatus = "ATIVO" | "INATIVO" | "TRANSFERIDO" | "FALECIDO";
+type MaritalStatus = "SOLTEIRO" | "CASADO" | "DIVORCIADO" | "VIUVO";
+
+interface PersonFormState {
+  fullName: string;
+  cpf: string;
+  email: string;
+  phone: string;
+  birthDate: string;
+  maritalStatus: MaritalStatus;
+  weddingDate: string;
+  profession: string;
+  personType: PersonType;
+  memberStatus: PersonStatus;
+  isBaptized: boolean;
+  baptismDate: string;
+  conversionDate: string;
+  cep: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  cellId: string;
+  notes: string;
+}
 
 interface PersonRow {
   id: string;
@@ -85,14 +112,14 @@ interface PersonRow {
 const TYPE_STYLES: Record<PersonType, string> = {
   MEMBRO: "bg-primary/10 text-primary",
   VISITANTE: "bg-gold/15 text-gold-muted dark:text-gold",
-  CONGREGADO: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  CONGREGADO: "bg-success/10 text-success",
 };
 
 const STATUS_STYLES: Record<string, string> = {
-  ATIVO: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  INATIVO: "bg-red-500/10 text-red-600 dark:text-red-400",
-  TRANSFERIDO: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
-  FALECIDO: "bg-gray-500/10 text-gray-600 dark:text-gray-400",
+  ATIVO: "bg-success/10 text-success",
+  INATIVO: "bg-destructive/10 text-destructive",
+  TRANSFERIDO: "bg-gold/15 text-gold-muted dark:text-gold",
+  FALECIDO: "bg-muted text-muted-foreground",
 };
 
 function getInitials(name: string): string {
@@ -207,17 +234,17 @@ export function PessoasClient({
 
   const hasActiveFilters = !!(currentStatus || currentBaptized || currentCell);
 
-  const getInitialFormState = (person: any) => ({
+  const getInitialFormState = (person: PersonRow | null): PersonFormState => ({
     fullName: person?.fullName || "",
     cpf: person?.cpf || "",
     email: person?.email || "",
     phone: person?.phone || "",
     birthDate: formatDateForInput(person?.birthDate ?? null) || "",
-    maritalStatus: person?.maritalStatus || "SOLTEIRO",
+    maritalStatus: (person?.maritalStatus as MaritalStatus | null) || "SOLTEIRO",
     weddingDate: formatDateForInput(person?.weddingDate ?? null) || "",
     profession: person?.profession || "",
-    personType: person?.personType || "VISITANTE",
-    memberStatus: person?.memberStatus || "ATIVO",
+    personType: (person?.personType as PersonType | null) || "VISITANTE",
+    memberStatus: (person?.memberStatus as PersonStatus | null) || "ATIVO",
     isBaptized: person?.isBaptized ?? false,
     baptismDate: formatDateForInput(person?.baptismDate ?? null) || "",
     conversionDate: formatDateForInput(person?.conversionDate ?? null) || "",
@@ -232,7 +259,9 @@ export function PessoasClient({
     notes: person?.notes || "",
   });
 
-  const [formData, setFormData] = React.useState<any>(getInitialFormState(selectedPerson));
+  const [formData, setFormData] = React.useState<PersonFormState>(
+    getInitialFormState(selectedPerson)
+  );
   const [formErrors, setFormErrors] = React.useState<Record<string, string[]>>({});
 
   React.useEffect(() => {
@@ -240,7 +269,10 @@ export function PessoasClient({
     setFormErrors({});
   }, [selectedPerson]);
 
-  const updateField = (field: string, value: any) => {
+  const updateField = <K extends keyof PersonFormState>(
+    field: K,
+    value: PersonFormState[K]
+  ) => {
     const newData = { ...formData, [field]: value };
     setFormData(newData);
     
@@ -315,6 +347,7 @@ export function PessoasClient({
     if (!parsed.success) {
       const fieldErrors = parsed.error.flatten().fieldErrors;
       const firstError = Object.values(fieldErrors).flat()[0];
+      setFormErrors(fieldErrors);
       toast.error(firstError || "Erro de validação, verifique os campos.");
       setSaving(false);
       return;
@@ -333,11 +366,12 @@ export function PessoasClient({
         setSelectedPerson(null);
         router.refresh();
       } else {
-        toast.error(
-          typeof result.error === "string"
-            ? result.error
-            : "Erro de validação. Verifique os campos."
-        );
+        if (typeof result.error === "object") {
+          setFormErrors(result.error as Record<string, string[]>);
+          toast.error("Erro de validação. Verifique os campos.");
+        } else {
+          toast.error(result.error ?? "Erro de validação. Verifique os campos.");
+        }
       }
     } catch {
       toast.error("Erro inesperado ao salvar.");
@@ -374,93 +408,81 @@ export function PessoasClient({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-1">
-            Membros e Visitantes
-          </p>
-          <h1 className="text-2xl font-heading font-bold text-foreground tracking-tight">
-            Gestão de Pessoas
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Diretório e CRM da comunidade
-          </p>
-        </div>
-        <Button
-          onClick={() => {
-            setSelectedPerson(null);
-            setSheetOpen(true);
-          }}
-          className="gradient-primary text-white rounded-xl gap-2"
-        >
-          <Plus className="h-4 w-4" />
-          Novo Cadastro
-        </Button>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Membros e Visitantes"
+        title="Gestão de Pessoas"
+        description="Diretório e CRM da comunidade com cadastro, acompanhamento e filtros pastorais."
+        actions={(
+          <Button
+            variant="brand"
+            onClick={() => {
+              setSelectedPerson(null);
+              setSheetOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            Novo Cadastro
+          </Button>
+        )}
+      />
 
       {/* Stats Overview */}
-      <div className="rounded-xl bg-card p-5 shadow-ambient">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-          Comunidade Total
-        </p>
-        <div className="flex items-end gap-6">
-          <p className="text-4xl font-heading font-bold text-foreground">
-            {stats.total.toLocaleString("pt-BR")}
-          </p>
-          <div className="flex gap-4 mb-1">
-            <div className="flex items-center gap-1.5">
-              <div className="h-2.5 w-2.5 rounded-full bg-primary" />
-              <span className="text-xs text-muted-foreground">
-                {stats.membros} Membros
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="h-2.5 w-2.5 rounded-full bg-gold" />
-              <span className="text-xs text-muted-foreground">
-                {stats.visitantes} Visitantes
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-              <span className="text-xs text-muted-foreground">
-                {stats.congregados} Congregados
-              </span>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Comunidade total"
+          value={stats.total.toLocaleString("pt-BR")}
+          icon={Users}
+          tone="primary"
+          helper="Todos os cadastros ativos no diretório"
+        />
+        <MetricCard
+          label="Membros"
+          value={stats.membros}
+          icon={Church}
+          tone="gold"
+          helper="Pessoas integradas à membresia"
+        />
+        <MetricCard
+          label="Visitantes"
+          value={stats.visitantes}
+          icon={UserPlus}
+          tone="success"
+          helper="Pessoas em acompanhamento"
+        />
+        <MetricCard
+          label="Congregados"
+          value={stats.congregados}
+          icon={User}
+          tone="info"
+          helper="Participantes recorrentes"
+        />
       </div>
 
       {/* Filters & Search */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
         <Tabs
           value={currentTab}
-          onValueChange={handleTabChange}
-          className="w-full sm:w-auto"
+          onValueChange={handleTabChange} className="w-full sm:w-auto"
         >
           <TabsList className="bg-surface-high rounded-xl h-10">
             <TabsTrigger
-              value="todos"
-              className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs"
+              value="todos" className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs"
             >
               Todos
             </TabsTrigger>
             <TabsTrigger
-              value="membros"
-              className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs"
+              value="membros" className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs"
             >
               Membros
             </TabsTrigger>
             <TabsTrigger
-              value="visitantes"
-              className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs"
+              value="visitantes" className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs"
             >
               Visitantes
             </TabsTrigger>
             <TabsTrigger
-              value="congregados"
-              className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs"
+              value="congregados" className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm text-xs"
             >
               Congregados
             </TabsTrigger>
@@ -473,23 +495,18 @@ export function PessoasClient({
             <Input
               placeholder="Buscar por nome..."
               value={search}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="pl-9 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+              onChange={(e) => handleSearch(e.target.value)} className="pl-9 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
             />
           </div>
           <Button
-            variant={hasActiveFilters ? "default" : "outline"}
-            size="sm"
-            className={cn(
-              "rounded-xl gap-2 h-10 px-4 shrink-0",
-              hasActiveFilters && "gradient-primary text-white"
-            )}
+            variant={hasActiveFilters ? "brand" : "outline"}
+            size="sm" className="h-10 shrink-0 gap-2 px-4"
             onClick={() => setFiltersOpen(!filtersOpen)}
           >
             <SlidersHorizontal className="h-4 w-4" />
             Filtros
             {hasActiveFilters && (
-              <span className="h-5 w-5 rounded-full bg-white/20 text-[0.6rem] flex items-center justify-center font-bold">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-xs font-bold">
                 {[currentStatus, currentBaptized, currentCell].filter(Boolean).length}
               </span>
             )}
@@ -499,15 +516,14 @@ export function PessoasClient({
 
       {/* Advanced Filters Panel */}
       {filtersOpen && (
-        <div className="rounded-xl bg-card p-4 shadow-ambient border border-border animate-in slide-in-from-top-2 duration-200">
+        <div className="app-card p-4 animate-in slide-in-from-top-2 duration-200">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               Filtros Avançados
             </p>
             {hasActiveFilters && (
               <button
-                onClick={clearFilters}
-                className="text-xs text-primary hover:underline flex items-center gap-1"
+                onClick={clearFilters} className="text-xs text-primary hover:underline flex items-center gap-1"
               >
                 <X className="h-3 w-3" />
                 Limpar filtros
@@ -590,7 +606,7 @@ export function PessoasClient({
       )}
 
       {/* People List */}
-      <div className="rounded-xl bg-card shadow-ambient overflow-hidden">
+      <div className="app-card overflow-hidden">
         {/* Table Header */}
         <div className="hidden md:grid grid-cols-[1fr_120px_150px_140px_100px_80px] gap-4 px-5 py-3 bg-surface-low text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           <span>Nome</span>
@@ -614,8 +630,7 @@ export function PessoasClient({
           ) : (
             initialData.map((person) => (
               <div
-                key={person.id}
-                className="group grid grid-cols-1 md:grid-cols-[1fr_120px_150px_140px_100px_80px] gap-2 md:gap-4 items-center px-5 py-3.5 hover:bg-surface-low/50 transition-colors cursor-pointer"
+                key={person.id} className="group grid grid-cols-1 md:grid-cols-[1fr_120px_150px_140px_100px_80px] gap-2 md:gap-4 items-center px-5 py-3.5 hover:bg-surface-low/50 transition-colors cursor-pointer"
                 onClick={() => {
                   setSelectedPerson(person);
                   setSheetOpen(true);
@@ -623,9 +638,15 @@ export function PessoasClient({
               >
                 {/* Name */}
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold overflow-hidden">
+                  <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold overflow-hidden">
                     {person.photoUrl ? (
-                      <img src={person.photoUrl} alt={person.fullName} className="h-full w-full object-cover" />
+                      <Image
+                        src={person.photoUrl}
+                        alt={person.fullName}
+                        fill
+                        sizes="36px"
+                        unoptimized className="object-cover"
+                      />
                     ) : (
                       getInitials(person.fullName)
                     )}
@@ -643,9 +664,8 @@ export function PessoasClient({
                 {/* Type */}
                 <div>
                   <Badge
-                    variant="secondary"
-                    className={cn(
-                      "rounded-md text-[0.65rem] font-semibold capitalize border-0",
+                    variant="secondary" className={cn(
+                      "rounded-md text-xs font-semibold capitalize border-0",
                       TYPE_STYLES[person.personType as PersonType] ?? ""
                     )}
                   >
@@ -666,9 +686,8 @@ export function PessoasClient({
                 {/* Status */}
                 <div className="hidden md:block">
                   <Badge
-                    variant="secondary"
-                    className={cn(
-                      "rounded-md text-[0.65rem] font-semibold capitalize border-0",
+                    variant="secondary" className={cn(
+                      "rounded-md text-xs font-semibold capitalize border-0",
                       STATUS_STYLES[person.memberStatus] ?? ""
                     )}
                   >
@@ -680,8 +699,7 @@ export function PessoasClient({
                 <div className="hidden md:flex items-center justify-end gap-1">
                   {person.phone && (
                     <>
-                      <button
-                        className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-emerald-500/10 hover:text-emerald-600 transition-colors"
+                      <button className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-success/10 hover:text-success transition-colors"
                         onClick={(e) => {
                           e.stopPropagation();
                           window.open(
@@ -693,8 +711,7 @@ export function PessoasClient({
                       >
                         <MessageSquare className="h-4 w-4" />
                       </button>
-                      <button
-                        className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                      <button className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
                         onClick={(e) => {
                           e.stopPropagation();
                           window.open(`tel:${person.phone!.replace(/\D/g, "")}`, "_self");
@@ -719,8 +736,7 @@ export function PessoasClient({
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs rounded-lg"
+              size="sm" className="h-7 px-2 text-xs rounded-lg"
               disabled={page <= 1}
               onClick={() => handlePageChange(page - 1)}
             >
@@ -731,8 +747,7 @@ export function PessoasClient({
                 <Button
                   key={p}
                   variant="ghost"
-                  size="sm"
-                  className={cn(
+                  size="sm" className={cn(
                     "h-7 px-2 text-xs rounded-lg",
                     p === page && "bg-primary/10 text-primary"
                   )}
@@ -744,8 +759,7 @@ export function PessoasClient({
             )}
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs rounded-lg"
+              size="sm" className="h-7 px-2 text-xs rounded-lg"
               disabled={page >= totalPages}
               onClick={() => handlePageChange(page + 1)}
             >
@@ -772,9 +786,8 @@ export function PessoasClient({
               </div>
               {selectedPerson && (
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                  variant="destructive"
+                  size="icon" className="h-8 w-8"
                   onClick={() => requestDelete(selectedPerson.id)}
                   disabled={deleting}
                 >
@@ -803,9 +816,15 @@ export function PessoasClient({
                 {selectedPerson && (
                   <div className="flex items-center gap-4 p-3 rounded-xl bg-surface-high">
                     <div className="relative group">
-                      <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-primary text-lg font-bold overflow-hidden">
+                      <div className="relative h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-primary text-lg font-bold overflow-hidden">
                         {selectedPerson.photoUrl ? (
-                          <img src={selectedPerson.photoUrl} alt="" className="h-full w-full object-cover" />
+                          <Image
+                            src={selectedPerson.photoUrl}
+                            alt=""
+                            fill
+                            sizes="64px"
+                            unoptimized className="object-cover"
+                          />
                         ) : (
                           getInitials(selectedPerson.fullName)
                         )}
@@ -814,8 +833,7 @@ export function PessoasClient({
                         <Camera className="h-5 w-5 text-white" />
                         <input
                           type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          className="sr-only"
+                          accept="image/jpeg,image/png,image/webp" className="sr-only"
                           onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (!file) return;
@@ -841,7 +859,7 @@ export function PessoasClient({
 
                 <div className="space-y-3">
                   <div>
-                    <Label className={cn("text-xs text-muted-foreground", formErrors.fullName && "text-red-500")}>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.fullName && "text-destructive")}>
                       Nome Completo *
                     </Label>
                     <Input
@@ -849,84 +867,80 @@ export function PessoasClient({
                       required
                       placeholder="Ex: João da Silva"
                       value={formData.fullName}
-                      onChange={(e) => updateField('fullName', e.target.value)}
-                      className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.fullName && "border border-red-500 focus-visible:ring-red-500")}
+                      onChange={(e) => updateField('fullName', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.fullName && "border border-destructive focus-visible:ring-destructive/20")}
                     />
-                    {formErrors.fullName && <p className="text-red-500 text-xs mt-1">{formErrors.fullName[0]}</p>}
+                    {formErrors.fullName && <p className="text-destructive text-xs mt-1">{formErrors.fullName[0]}</p>}
                   </div>
 
                   <div>
-                    <Label className={cn("text-xs text-muted-foreground", formErrors.cpf && "text-red-500")}>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.cpf && "text-destructive")}>
                       CPF
                     </Label>
                     <Input
                       name="cpf"
                       placeholder="000.000.000-00"
                       value={formData.cpf}
-                      onChange={(e) => updateField('cpf', maskCpf(e.target.value))}
-                      className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.cpf && "border border-red-500 focus-visible:ring-red-500")}
+                      onChange={(e) => updateField('cpf', maskCpf(e.target.value))} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.cpf && "border border-destructive focus-visible:ring-destructive/20")}
                     />
-                    {formErrors.cpf && <p className="text-red-500 text-xs mt-1">{formErrors.cpf[0]}</p>}
+                    {formErrors.cpf && <p className="text-destructive text-xs mt-1">{formErrors.cpf[0]}</p>}
                   </div>
 
                   <div>
-                    <Label className={cn("text-xs text-muted-foreground", formErrors.email && "text-red-500")}>E-mail</Label>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.email && "text-destructive")}>E-mail</Label>
                     <Input
                       name="email"
                       type="email"
                       placeholder="email@exemplo.com"
                       value={formData.email}
-                      onChange={(e) => updateField('email', e.target.value)}
-                      className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.email && "border border-red-500 focus-visible:ring-red-500")}
+                      onChange={(e) => updateField('email', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.email && "border border-destructive focus-visible:ring-destructive/20")}
                     />
-                    {formErrors.email && <p className="text-red-500 text-xs mt-1">{formErrors.email[0]}</p>}
+                    {formErrors.email && <p className="text-destructive text-xs mt-1">{formErrors.email[0]}</p>}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className={cn("text-xs text-muted-foreground", formErrors.phone && "text-red-500")}>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.phone && "text-destructive")}>
                         WhatsApp
                       </Label>
                       <Input
                         name="phone"
                         placeholder="(11) 00000-0000"
                         value={formData.phone}
-                        onChange={(e) => updateField('phone', maskPhone(e.target.value))}
-                        className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.phone && "border border-red-500 focus-visible:ring-red-500")}
+                        onChange={(e) => updateField('phone', maskPhone(e.target.value))} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.phone && "border border-destructive focus-visible:ring-destructive/20")}
                       />
                     </div>
                     <div>
-                      <Label className={cn("text-xs text-muted-foreground", formErrors.birthDate && "text-red-500")}>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.birthDate && "text-destructive")}>
                         Nascimento
                       </Label>
                       <Input
                         name="birthDate"
                         type="date"
                         value={formData.birthDate}
-                        onChange={(e) => updateField('birthDate', e.target.value)}
-                        className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.birthDate && "border border-red-500 focus-visible:ring-red-500")}
+                        onChange={(e) => updateField('birthDate', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.birthDate && "border border-destructive focus-visible:ring-destructive/20")}
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className={cn("text-xs text-muted-foreground", formErrors.maritalStatus && "text-red-500")}>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.maritalStatus && "text-destructive")}>
                         Estado Civil
                       </Label>
                       <Select
                         name="maritalStatus"
                         value={formData.maritalStatus}
                         onValueChange={(v) => {
-                          const newData = { ...formData, maritalStatus: v };
-                          if (v === 'SOLTEIRO') newData.weddingDate = "";
+                          const maritalStatus = (v ?? "SOLTEIRO") as MaritalStatus;
+                          const newData = { ...formData, maritalStatus };
+                          if (maritalStatus === 'SOLTEIRO') newData.weddingDate = "";
                           setFormData(newData);
                           // trigger validation
                           const parsed = personSchema.safeParse(newData);
                           setFormErrors(parsed.success ? {} : parsed.error.flatten().fieldErrors);
                         }}
                       >
-                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.maritalStatus && "border border-red-500")}>
+                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.maritalStatus && "border border-destructive")}>
                           <SelectValue placeholder="Selecione">
                             {formData.maritalStatus === "SOLTEIRO" && "Solteiro(a)"}
                             {formData.maritalStatus === "CASADO" && "Casado(a)"}
@@ -943,7 +957,7 @@ export function PessoasClient({
                       </Select>
                     </div>
                     <div>
-                      <Label className={cn("text-xs text-muted-foreground", formErrors.weddingDate && "text-red-500")}>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.weddingDate && "text-destructive")}>
                         Data Casamento
                       </Label>
                       <Input
@@ -951,27 +965,25 @@ export function PessoasClient({
                         type="date"
                         disabled={formData.maritalStatus === 'SOLTEIRO'}
                         value={formData.weddingDate}
-                        onChange={(e) => updateField('weddingDate', e.target.value)}
-                        className={cn(
+                        onChange={(e) => updateField('weddingDate', e.target.value)} className={cn(
                           "mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", 
                           formData.maritalStatus === 'SOLTEIRO' && "opacity-50 cursor-not-allowed",
-                          formErrors.weddingDate && "border border-red-500 focus-visible:ring-red-500"
+                          formErrors.weddingDate && "border border-destructive focus-visible:ring-destructive/20"
                         )}
                       />
-                      {formErrors.weddingDate && <p className="text-red-500 text-xs mt-1">{formErrors.weddingDate[0]}</p>}
+                      {formErrors.weddingDate && <p className="text-destructive text-xs mt-1">{formErrors.weddingDate[0]}</p>}
                     </div>
                   </div>
 
                   <div>
-                    <Label className={cn("text-xs text-muted-foreground", formErrors.profession && "text-red-500")}>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.profession && "text-destructive")}>
                       Profissão
                     </Label>
                     <Input
                       name="profession"
                       placeholder="Ex: Engenheiro"
                       value={formData.profession}
-                      onChange={(e) => updateField('profession', e.target.value)}
-                      className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.profession && "border border-red-500 focus-visible:ring-red-500")}
+                      onChange={(e) => updateField('profession', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.profession && "border border-destructive focus-visible:ring-destructive/20")}
                     />
                   </div>
                 </div>
@@ -989,13 +1001,13 @@ export function PessoasClient({
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className={cn("text-xs text-muted-foreground", formErrors.personType && "text-red-500")}>Tipo</Label>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.personType && "text-destructive")}>Tipo</Label>
                       <Select
                         name="personType"
                         value={formData.personType}
-                        onValueChange={(v) => updateField('personType', v)}
+                        onValueChange={(v) => updateField('personType', (v ?? "VISITANTE") as PersonType)}
                       >
-                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.personType && "border border-red-500")}>
+                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.personType && "border border-destructive")}>
                           <SelectValue>
                             {formData.personType === "MEMBRO" && "Membro"}
                             {formData.personType === "VISITANTE" && "Visitante"}
@@ -1010,13 +1022,13 @@ export function PessoasClient({
                       </Select>
                     </div>
                     <div>
-                      <Label className={cn("text-xs text-muted-foreground", formErrors.memberStatus && "text-red-500")}>Status</Label>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.memberStatus && "text-destructive")}>Status</Label>
                       <Select
                         name="memberStatus"
                         value={formData.memberStatus}
-                        onValueChange={(v) => updateField('memberStatus', v)}
+                        onValueChange={(v) => updateField('memberStatus', (v ?? "ATIVO") as PersonStatus)}
                       >
-                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.memberStatus && "border border-red-500")}>
+                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.memberStatus && "border border-destructive")}>
                           <SelectValue>
                             {formData.memberStatus === "ATIVO" && "Ativo"}
                             {formData.memberStatus === "INATIVO" && "Inativo"}
@@ -1052,40 +1064,39 @@ export function PessoasClient({
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className={cn("text-xs text-muted-foreground", formErrors.baptismDate && "text-red-500")}>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.baptismDate && "text-destructive")}>
                         Data do Batismo
                       </Label>
                       <Input
                         name="baptismDate"
                         type="date"
                         value={formData.baptismDate}
-                        onChange={(e) => updateField('baptismDate', e.target.value)}
-                        className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.baptismDate && "border border-red-500 focus-visible:ring-red-500")}
+                        onChange={(e) => updateField('baptismDate', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.baptismDate && "border border-destructive focus-visible:ring-destructive/20")}
                       />
+                      {formErrors.baptismDate && <p className="text-destructive text-xs mt-1">{formErrors.baptismDate[0]}</p>}
                     </div>
                     <div>
-                      <Label className={cn("text-xs text-muted-foreground", formErrors.conversionDate && "text-red-500")}>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.conversionDate && "text-destructive")}>
                         Data da Conversão
                       </Label>
                       <Input
                         name="conversionDate"
                         type="date"
                         value={formData.conversionDate}
-                        onChange={(e) => updateField('conversionDate', e.target.value)}
-                        className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.conversionDate && "border border-red-500 focus-visible:ring-red-500")}
+                        onChange={(e) => updateField('conversionDate', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.conversionDate && "border border-destructive focus-visible:ring-destructive/20")}
                       />
-                      {formErrors.conversionDate && <p className="text-red-500 text-xs mt-1">{formErrors.conversionDate[0]}</p>}
+                      {formErrors.conversionDate && <p className="text-destructive text-xs mt-1">{formErrors.conversionDate[0]}</p>}
                     </div>
                   </div>
 
                   <div>
-                    <Label className={cn("text-xs text-muted-foreground", formErrors.cellId && "text-red-500")}>Célula</Label>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.cellId && "text-destructive")}>Célula</Label>
                     <Select
                       name="cellId"
                       value={formData.cellId}
-                      onValueChange={(v) => updateField('cellId', v)}
+                      onValueChange={(v) => updateField('cellId', v === "none" ? "" : v ?? "")}
                     >
-                      <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.cellId && "border border-red-500")}>
+                      <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.cellId && "border border-destructive")}>
                         <SelectValue placeholder="Selecione uma Célula">
                           {formData.cellId ? cells.find(c => c.id === formData.cellId)?.name : "Nenhuma"}
                         </SelectValue>
@@ -1115,67 +1126,67 @@ export function PessoasClient({
                 <div className="space-y-3">
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground">CEP</Label>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.cep && "text-destructive")}>CEP</Label>
                       <Input
                         name="cep"
                         placeholder="00000-000"
                         value={formData.cep}
-                        onChange={handleCepChange}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        onChange={handleCepChange} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.cep && "border border-destructive focus-visible:ring-destructive/20")}
                       />
+                      {formErrors.cep && <p className="text-destructive text-xs mt-1">{formErrors.cep[0]}</p>}
                     </div>
                     <div className="col-span-2">
-                      <Label className="text-xs text-muted-foreground">Rua</Label>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.street && "text-destructive")}>Rua</Label>
                       <Input
                         name="street"
                         placeholder="Nome da Rua"
                         value={formData.street}
-                        onChange={(e) => updateField('street', e.target.value)}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        onChange={(e) => updateField('street', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.street && "border border-destructive focus-visible:ring-destructive/20")}
                       />
+                      {formErrors.street && <p className="text-destructive text-xs mt-1">{formErrors.street[0]}</p>}
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.number && "text-destructive")}>
                         Número
                       </Label>
                       <Input
                         name="number"
                         placeholder="Nº"
                         value={formData.number}
-                        onChange={(e) => updateField('number', e.target.value)}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        onChange={(e) => updateField('number', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.number && "border border-destructive focus-visible:ring-destructive/20")}
                       />
+                      {formErrors.number && <p className="text-destructive text-xs mt-1">{formErrors.number[0]}</p>}
                     </div>
                     <div className="col-span-2">
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.neighborhood && "text-destructive")}>
                         Bairro
                       </Label>
                       <Input
                         name="neighborhood"
                         placeholder="Bairro"
                         value={formData.neighborhood}
-                        onChange={(e) => updateField('neighborhood', e.target.value)}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        onChange={(e) => updateField('neighborhood', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.neighborhood && "border border-destructive focus-visible:ring-destructive/20")}
                       />
+                      {formErrors.neighborhood && <p className="text-destructive text-xs mt-1">{formErrors.neighborhood[0]}</p>}
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-2">
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.city && "text-destructive")}>
                         Cidade
                       </Label>
                       <Input
                         name="city"
                         placeholder="Cidade"
                         value={formData.city}
-                        onChange={(e) => updateField('city', e.target.value)}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        onChange={(e) => updateField('city', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.city && "border border-destructive focus-visible:ring-destructive/20")}
                       />
+                      {formErrors.city && <p className="text-destructive text-xs mt-1">{formErrors.city[0]}</p>}
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.state && "text-destructive")}>
                         UF
                       </Label>
                       <Input
@@ -1183,9 +1194,9 @@ export function PessoasClient({
                         placeholder="UF"
                         maxLength={2}
                         value={formData.state}
-                        onChange={(e) => updateField('state', e.target.value.toUpperCase())}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 uppercase"
+                        onChange={(e) => updateField('state', e.target.value.toUpperCase())} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 uppercase", formErrors.state && "border border-destructive focus-visible:ring-destructive/20")}
                       />
+                      {formErrors.state && <p className="text-destructive text-xs mt-1">{formErrors.state[0]}</p>}
                     </div>
                   </div>
                 </div>
@@ -1193,15 +1204,15 @@ export function PessoasClient({
 
               {/* Observações */}
               <div>
-                <Label className="text-xs text-muted-foreground">Observações</Label>
+                <Label className={cn("text-xs text-muted-foreground", formErrors.notes && "text-destructive")}>Observações</Label>
                 <textarea
                   name="notes"
                   rows={3}
                   placeholder="Anotações gerais..."
                   value={formData.notes}
-                  onChange={(e) => updateField('notes', e.target.value)}
-                  className="mt-1.5 w-full rounded-xl bg-surface-high border-0 p-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 resize-none"
+                  onChange={(e) => updateField('notes', e.target.value)} className={cn("mt-1.5 w-full rounded-xl bg-surface-high border-0 p-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 resize-none", formErrors.notes && "border border-destructive")}
                 />
+                {formErrors.notes && <p className="text-destructive text-xs mt-1">{formErrors.notes[0]}</p>}
               </div>
 
             </form>
@@ -1211,8 +1222,7 @@ export function PessoasClient({
           <div className="border-t border-border bg-card p-6 shrink-0 z-10 flex gap-3">
             <Button
               type="button"
-              variant="outline"
-              className="flex-1 h-11 rounded-xl border-border hover:bg-surface-high"
+              variant="outline" className="flex-1 h-11 rounded-xl border-border hover:bg-surface-high"
               onClick={() => setSheetOpen(false)}
               disabled={saving}
             >
@@ -1221,8 +1231,8 @@ export function PessoasClient({
             <Button
               type="submit"
               form="pessoa-form"
-              disabled={saving}
-              className="flex-1 h-11 rounded-xl gradient-primary text-white shadow-lg hover:shadow-primary/25 transition-all"
+              variant="brand"
+              disabled={saving} className="h-11 flex-1"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {selectedPerson ? "Salvar Alterações" : "Cadastrar"}

@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
@@ -21,6 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { logout } from "@/lib/auth";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -32,7 +34,6 @@ const NAV_ITEMS = [
 
 const BOTTOM_ITEMS = [
   { label: "Configurações", href: "/configuracoes", icon: Settings },
-  { label: "Sair", href: "/sair", icon: LogOut },
 ];
 
 interface SidebarProps {
@@ -44,6 +45,8 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = React.useState(false);
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
@@ -61,8 +64,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
     const linkContent = (
       <Link
         href={item.href}
-        onClick={onMobileClose}
-        className={cn(
+        onClick={onMobileClose} className={cn(
           "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
           active
             ? "bg-primary text-primary-foreground shadow-sm"
@@ -70,8 +72,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
           collapsed && !mobileOpen && "lg:justify-center lg:px-2"
         )}
       >
-        <Icon
-          className={cn(
+        <Icon className={cn(
             "h-5 w-5 shrink-0 transition-colors",
             active
               ? "text-primary-foreground"
@@ -105,9 +106,30 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
     return linkContent;
   };
 
+  async function handleLogout() {
+    setLoggingOut(true);
+    await logout();
+    router.push("/login");
+    router.refresh();
+  }
+
+  const logoutContent = (
+    <button
+      onClick={handleLogout}
+      disabled={loggingOut} className={cn(
+        "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:opacity-60",
+        collapsed && !mobileOpen && "lg:justify-center lg:px-2"
+      )}
+    >
+      <LogOut className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+      <span className={cn("truncate", collapsed && !mobileOpen && "lg:hidden")}>
+        {loggingOut ? "Saindo..." : "Sair"}
+      </span>
+    </button>
+  );
+
   return (
-    <aside
-      className={cn(
+    <aside className={cn(
         "fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 ease-in-out",
         // Desktop
         collapsed ? "lg:w-[72px]" : "lg:w-[250px]",
@@ -118,14 +140,19 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
       )}
     >
       {/* Logo / Brand */}
-      <div
-        className={cn(
+      <div className={cn(
           "flex items-center border-b border-sidebar-border px-4 h-16",
           collapsed && !mobileOpen ? "lg:justify-center" : "gap-3"
         )}
       >
         <div className="flex shrink-0 items-center justify-center">
-          <img src="/logo.png" alt="Logo IEAB" className="h-9 w-auto object-contain" />
+          <Image
+            src="/logo.png"
+            alt="Logo IEAB"
+            width={120}
+            height={36} className="h-9 w-auto object-contain"
+            priority
+          />
         </div>
         <div className={cn(
           "flex flex-col overflow-hidden",
@@ -138,8 +165,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
 
         {/* Mobile close button */}
         <button
-          onClick={onMobileClose}
-          className="ml-auto lg:hidden flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-high transition-colors"
+          onClick={onMobileClose} className="ml-auto lg:hidden flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-high transition-colors"
           aria-label="Fechar menu"
         >
           <X className="h-5 w-5" />
@@ -158,12 +184,23 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
         {BOTTOM_ITEMS.map((item) => (
           <NavLink key={item.href} item={item} />
         ))}
+        {collapsed && !mobileOpen ? (
+          <span className="hidden lg:block">
+            <Tooltip>
+              <TooltipTrigger>{logoutContent}</TooltipTrigger>
+              <TooltipContent side="right" sideOffset={12}>
+                Sair
+              </TooltipContent>
+            </Tooltip>
+          </span>
+        ) : (
+          logoutContent
+        )}
       </div>
 
       {/* Collapse Toggle — desktop only */}
       <button
-        onClick={onToggle}
-        className={cn(
+        onClick={onToggle} className={cn(
           "absolute -right-3 top-20 z-50 hidden lg:flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
         )}
         aria-label={collapsed ? "Expandir menu" : "Recolher menu"}

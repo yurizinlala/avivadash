@@ -28,6 +28,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -100,6 +101,7 @@
 
   /* Destructive */
   --destructive: #ba1a1a;
+  --success: #05885d;
 
   /* Borders & Inputs — Subtle, per "no-line" principle */
   --border: #e5e2e1;
@@ -164,6 +166,7 @@
 
   /* Destructive */
   --destructive: #ff6b6b;
+  --success: #35d49a;
 
   /* Borders & Inputs */
   --border: rgba(255, 255, 255, 0.08);
@@ -241,7 +244,132 @@
   }
 }
 
+/* Keep Leaflet's high internal z-indexes contained behind app chrome. */
+.leaflet-container {
+  isolation: isolate;
+  z-index: 0;
+}
+
 /* ========== CUSTOM UTILITIES ========== */
+@layer components {
+  .page-stack {
+    @apply space-y-6;
+  }
+
+  .page-header {
+    @apply flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between;
+  }
+
+  .page-eyebrow {
+    @apply mb-1 text-xs font-semibold uppercase tracking-widest text-primary;
+  }
+
+  .page-title {
+    @apply font-heading text-2xl font-bold tracking-tight text-foreground;
+  }
+
+  .page-subtitle {
+    @apply mt-1 max-w-2xl text-sm text-muted-foreground;
+  }
+
+  .app-card {
+    @apply rounded-xl border border-border/50 bg-card;
+    box-shadow: 0 8px 24px -4px rgba(28, 27, 27, 0.06);
+  }
+
+  .dark .app-card {
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.3);
+  }
+
+  .app-card-body {
+    @apply p-5 sm:p-6;
+  }
+
+  .app-card-header {
+    @apply flex items-center gap-3 border-b border-border p-5;
+  }
+
+  .section-heading {
+    @apply flex items-center gap-2 text-primary;
+  }
+
+  .section-title {
+    @apply font-heading text-base font-semibold text-foreground;
+  }
+
+  .section-kicker {
+    @apply text-xs font-semibold uppercase tracking-widest text-muted-foreground;
+  }
+
+  .section-description {
+    @apply text-xs text-muted-foreground;
+  }
+
+  .metric-label {
+    @apply text-xs font-semibold uppercase tracking-widest text-muted-foreground;
+  }
+
+  .metric-value {
+    @apply font-heading text-3xl font-bold text-foreground;
+  }
+
+  .supporting-text {
+    @apply text-xs text-muted-foreground;
+  }
+
+  .icon-tile {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-xl;
+  }
+
+  .icon-tile-primary {
+    @apply bg-primary/10 text-primary;
+  }
+
+  .icon-tile-gold {
+    @apply bg-gold/15 text-gold-muted dark:text-gold;
+  }
+
+  .icon-tile-success {
+    @apply bg-success/10 text-success;
+  }
+
+  .icon-tile-warning {
+    @apply bg-gold/15 text-gold-muted dark:text-gold;
+  }
+
+  .icon-tile-danger {
+    @apply bg-destructive/10 text-destructive;
+  }
+
+  .icon-tile-info {
+    @apply bg-chart-2/10 text-chart-2;
+  }
+
+  .form-control {
+    @apply h-10 rounded-xl border-0 bg-surface-high focus-visible:ring-2 focus-visible:ring-primary/20;
+  }
+
+  .form-control-error {
+    @apply border border-destructive focus-visible:ring-destructive/20;
+  }
+
+  .form-label {
+    @apply text-xs text-muted-foreground;
+  }
+
+  .field-error {
+    @apply mt-1 text-xs text-destructive;
+  }
+
+  .item-row {
+    @apply rounded-lg bg-surface-low p-3 transition-colors hover:bg-surface-high;
+  }
+
+  .app-focus-ring {
+    @apply focus-visible:ring-2 focus-visible:ring-primary/20;
+  }
+}
+
 @layer utilities {
   /* Gradient Primary CTA (from Stitch design spec) */
   .gradient-primary {

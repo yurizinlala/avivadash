@@ -30,7 +30,9 @@ export function MapPageClient({ cells, pendingGeocode }: MapPageClientProps) {
     setGeocoding(true);
     try {
       const result = await geocodeAllCells();
-      if (result.geocoded > 0) {
+      if (result.error) {
+        toast.error(result.error);
+      } else if (result.geocoded > 0) {
         toast.success(
           `${result.geocoded} de ${result.total} célula(s) localizadas com sucesso!`
         );

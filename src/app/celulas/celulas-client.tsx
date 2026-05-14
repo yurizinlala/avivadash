@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
-  Network, Plus, MapPin, Clock, Search, Filter,
-  Loader2, Trash2, Users, Map, Edit3, X, User,
-  Calendar, Info, CalendarDays, Phone, ChevronDown, Check, Camera, Image as ImageIcon
+  Plus, MapPin, Clock, Search,
+  Loader2, Trash2, Users, Map, Edit3, User,
+  Info, Check, Camera, Image as ImageIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,9 @@ import { toast } from "sonner";
 import { createCell, updateCell, deleteCell } from "@/lib/actions/cell-actions";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { maskPhone, maskCep, maskCpf } from "@/lib/masks";
+import { cellSchema } from "@/lib/validations/cell";
 import { uploadCellCover } from "@/lib/actions/upload-actions";
+import { FieldError, MetricCard, PageHeader } from "@/components/design-system";
 
 // Match extended fields from backend
 interface PersonRow {
@@ -39,10 +42,19 @@ interface CellRow {
   id: string;
   name: string;
   coverUrl?: string | null;
+  foundedAt?: Date | null;
   neighborhood?: string | null;
   leaderId?: string | null;
   leaderName: string;
   leaderPhone: string | null;
+  leaderCpf?: string | null;
+  leaderBirthDate?: Date | null;
+  cep?: string | null;
+  street?: string | null;
+  number?: string | null;
+  complement?: string | null;
+  city?: string | null;
+  state?: string | null;
   address: string | null;
   dayOfWeek: string | null;
   time: string | null;
@@ -54,16 +66,21 @@ interface CellRow {
 }
 
 const GRADIENT_COLORS = [
-  "from-slate-700 to-slate-500",
+  "from-brand-dark to-primary",
   "from-primary to-primary/70",
-  "from-slate-600 to-blue-900",
-  "from-emerald-800 to-emerald-600",
-  "from-violet-800 to-violet-600",
-  "from-amber-800 to-amber-600",
+  "from-chart-2 to-primary",
+  "from-success to-primary",
+  "from-gold-muted to-gold",
+  "from-primary to-gold-muted",
 ];
 
 function getInitials(name: string): string {
   return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function formatDateForInput(date: Date | null | undefined): string {
+  if (!date) return "";
+  return new Date(date).toISOString().split("T")[0];
 }
 
 interface CelulasClientProps {
@@ -79,6 +96,7 @@ interface CelulasClientProps {
 
 export function CelulasClient({ initialCells, stats, people }: CelulasClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedCell, setSelectedCell] = useState<CellRow | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -130,26 +148,37 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
   const [formErrors, setFormErrors] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
+    const highlightId = searchParams.get("highlight");
+    if (!highlightId) return;
+
+    const highlightedCell = initialCells.find((cell) => cell.id === highlightId);
+    if (highlightedCell) {
+      setSelectedCell(highlightedCell);
+      setIsEditing(false);
+      setSheetOpen(true);
+    }
+  }, [initialCells, searchParams]);
+
+  useEffect(() => {
     if (selectedCell) {
       setFormData({
         name: selectedCell.name,
         coverUrl: selectedCell.coverUrl || "",
-        foundedAt: "",
+        foundedAt: formatDateForInput(selectedCell.foundedAt),
 
         leaderId: selectedCell.leaderId || "",
         leaderName: selectedCell.leaderName,
         leaderPhone: selectedCell.leaderPhone || "",
-        leaderCpf: "",
-        leaderBirthDate: "",
+        leaderCpf: selectedCell.leaderCpf ? maskCpf(selectedCell.leaderCpf) : "",
+        leaderBirthDate: formatDateForInput(selectedCell.leaderBirthDate),
 
-        // Temporarily parse address string, since backend migration might not have filled these individually yet
-        cep: "",
-        street: selectedCell.address || "",
-        number: "",
-        complement: "",
-        neighborhood: "",
-        city: "",
-        state: "",
+        cep: selectedCell.cep || "",
+        street: selectedCell.street || selectedCell.address || "",
+        number: selectedCell.number || "",
+        complement: selectedCell.complement || "",
+        neighborhood: selectedCell.neighborhood || "",
+        city: selectedCell.city || "",
+        state: selectedCell.state || "",
 
         dayOfWeek: selectedCell.dayOfWeek || "",
         time: selectedCell.time || "",
@@ -182,15 +211,18 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
     setFormErrors({});
   }, [selectedCell, sheetOpen]);
 
+  const validateFormData = (data: typeof formData) => {
+    const parsed = cellSchema.safeParse(data);
+    setFormErrors(parsed.success ? {} : parsed.error.flatten().fieldErrors);
+    return parsed.success;
+  };
+
   const updateField = (field: string, value: string | boolean | null) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    if (formErrors[field]) {
-      setFormErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
-    }
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value };
+      validateFormData(next);
+      return next;
+    });
   };
 
   // ----- SEARCH & LEADERSHIP HANDLING -----
@@ -203,25 +235,29 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
 
   const selectLeader = (person: PersonRow | null) => {
     if (person) {
-      setFormData((prev) => ({
-        ...prev,
+      const nextData = {
+        ...formData,
         leaderId: person.id,
         leaderName: person.fullName,
         leaderPhone: person.phone || "",
         leaderCpf: person.cpf ? maskCpf(person.cpf) : "",
         leaderBirthDate: person.birthDate ? new Date(person.birthDate).toISOString().split("T")[0] : "",
-      }));
+      };
+      setFormData(nextData);
+      validateFormData(nextData);
       setSearchLeaderQuery(person.fullName);
     } else {
       // Manual mode insertion
-      setFormData((prev) => ({
-        ...prev,
+      const nextData = {
+        ...formData,
         leaderId: "",
         leaderName: searchLeaderQuery,
         leaderPhone: "",
         leaderCpf: "",
         leaderBirthDate: "",
-      }));
+      };
+      setFormData(nextData);
+      validateFormData(nextData);
     }
     setLeaderSearchOpen(false);
   };
@@ -235,13 +271,17 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
       const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
       const data = await res.json();
       if (!data.erro) {
-        setFormData((prev) => ({
-          ...prev,
-          street: data.logradouro,
-          neighborhood: data.bairro,
-          city: data.localidade,
-          state: data.uf,
-        }));
+        setFormData((prev) => {
+          const next = {
+            ...prev,
+            street: data.logradouro,
+            neighborhood: data.bairro,
+            city: data.localidade,
+            state: data.uf,
+          };
+          validateFormData(next);
+          return next;
+        });
       } else {
         toast.error("CEP não encontrado.");
       }
@@ -263,15 +303,9 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
     setSaving(true);
     setFormErrors({});
 
-    // Quick validation before submitting
-    let errors: Record<string, string[]> = {};
-    if (!formData.name.trim()) errors.name = ["Nome da célula é obrigatório"];
-    if (!formData.leaderName.trim()) errors.leaderName = ["O líder é obrigatório"];
-
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
+    if (!validateFormData(formData)) {
       setSaving(false);
-      toast.error("Preencha os campos obrigatórios.");
+      toast.error("Corrija os erros do formulário antes de salvar.");
       return;
     }
 
@@ -290,7 +324,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
         router.refresh();
       } else {
         if (typeof result.error === "object") {
-          setFormErrors(result.error as any);
+          setFormErrors(result.error as Record<string, string[]>);
           toast.error("Existem erros no formulário.");
         } else {
           toast.error(typeof result.error === "string" ? result.error : "Erro ao salvar.");
@@ -334,74 +368,63 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
   }
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-1">
-            Gestão de Células
-          </p>
-          <h1 className="text-2xl font-heading font-bold text-foreground tracking-tight">
-            Pequenos Grupos
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-xl">
-            Gerencie as células, líderes e configurações gerais.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/celulas/mapa"
-            className="inline-flex items-center gap-2 rounded-xl bg-surface-high px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-lowest border border-border"
-          >
-            <Map className="h-4 w-4" />
-            Ver Mapa
-          </Link>
-          <Button
-            onClick={() => {
-              setSelectedCell(null);
-              setIsEditing(true);
-              setSheetOpen(true);
-            }}
-            className="gradient-primary text-white rounded-xl gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Nova Célula
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Células Ativas", value: String(stats.activeCells), accent: true },
-          {
-            label: "Participantes",
-            value: String(stats.totalParticipants),
-            sub: `Média de ${stats.avgPerCell}/célula`,
-          },
-          { label: "Total de Células", value: String(stats.totalCells), sub: null },
-          {
-            label: "Média",
-            value: String(stats.avgPerCell),
-            sub: "Participantes ativos",
-          },
-        ].map((s, i) => (
-          <div key={i} className="rounded-xl bg-card p-5 shadow-ambient border border-border/50">
-            <p className="text-[0.65rem] font-semibold uppercase tracking-widest text-muted-foreground">
-              {s.label}
-            </p>
-            <p
-              className={cn(
-                "text-3xl font-heading font-bold mt-1",
-                s.accent ? "text-primary" : "text-foreground"
-              )}
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Gestão de Células"
+        title="Pequenos Grupos"
+        description="Gerencie células, líderes, endereços e horários com o mesmo padrão de cadastro."
+        actions={(
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/celulas/mapa" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface-high"
             >
-              {s.value}
-            </p>
-            {s.sub && (
-              <p className="text-xs text-muted-foreground mt-0.5">{s.sub}</p>
-            )}
+              <Map className="h-4 w-4" />
+              Ver Mapa
+            </Link>
+            <Button
+              variant="brand"
+              onClick={() => {
+                setSelectedCell(null);
+                setIsEditing(true);
+                setSheetOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              Nova Célula
+            </Button>
           </div>
-        ))}
+        )}
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Células ativas"
+          value={stats.activeCells}
+          icon={MapPin}
+          tone="primary"
+          helper="Grupos em funcionamento"
+        />
+        <MetricCard
+          label="Participantes"
+          value={stats.totalParticipants}
+          icon={Users}
+          tone="success"
+          helper={`Média de ${stats.avgPerCell}/célula`}
+        />
+        <MetricCard
+          label="Total de células"
+          value={stats.totalCells}
+          icon={Map}
+          tone="gold"
+          helper="Inclui ativas e inativas"
+        />
+        <MetricCard
+          label="Média por célula"
+          value={stats.avgPerCell}
+          icon={Clock}
+          tone="info"
+          helper="Participantes ativos"
+        />
       </div>
 
       {/* Cell Cards */}
@@ -413,9 +436,8 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
               setSelectedCell(cell);
               setIsEditing(false);
               setSheetOpen(true);
-            }}
-            className={cn(
-              "group cursor-pointer rounded-2xl bg-card shadow-ambient overflow-hidden transition-all hover:scale-[1.01] hover:shadow-lg",
+            }} className={cn(
+              "app-card group cursor-pointer overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-lg",
               !cell.isActive && "opacity-70 grayscale-[0.3]"
             )}
           >
@@ -425,17 +447,19 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
               GRADIENT_COLORS[idx % GRADIENT_COLORS.length]
             )}>
               {cell.coverUrl && (
-                <img
+                <Image
                   src={cell.coverUrl}
                   alt={cell.name}
-                  className="absolute inset-0 w-full h-full object-cover"
+                  fill
+                  sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
+                  unoptimized className="object-cover"
                 />
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
 
               {/* Zone/Neighborhood Badge */}
               {cell.neighborhood && (
-                <span className="absolute top-3 left-3 bg-white/20 backdrop-blur-sm text-white text-[0.6rem] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md">
+                <span className="absolute top-3 left-3 rounded-md bg-white/20 px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-white backdrop-blur-sm">
                   {cell.neighborhood}
                 </span>
               )}
@@ -443,7 +467,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
               {/* Active indicator */}
               <div className={cn(
                 "absolute top-3 right-3 h-2.5 w-2.5 rounded-full shadow-lg",
-                cell.isActive ? "bg-green-400" : "bg-red-400"
+                cell.isActive ? "bg-success" : "bg-destructive"
               )} />
             </div>
 
@@ -479,21 +503,21 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                 <div className="flex items-center">
                   <div className="flex -space-x-1.5">
                     {Array.from({ length: Math.min(3, cell._count.members) }).map((_, i) => (
-                      <div key={i} className="h-6 w-6 rounded-full bg-primary/15 border-2 border-card flex items-center justify-center text-[9px] font-bold text-primary">
+                      <div key={i} className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-primary/15 text-xs font-bold text-primary">
                         {cell.members[i] ? getInitials(cell.members[i].fullName) : `M${i + 1}`}
                       </div>
                     ))}
                   </div>
                   {cell._count.members > 0 && (
-                    <span className="ml-1.5 text-[10px] font-semibold text-white bg-primary rounded-full px-1.5 py-0.5">
+                    <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-xs font-semibold text-white">
                       +{cell._count.members}
                     </span>
                   )}
                   {cell._count.members === 0 && (
-                    <span className="text-[11px] text-muted-foreground">Sem membros</span>
+                    <span className="text-xs text-muted-foreground">Sem membros</span>
                   )}
                 </div>
-                <span className="text-[11px] font-semibold text-primary flex items-center gap-1">
+                <span className="flex items-center gap-1 text-xs font-semibold text-primary">
                   Ver Detalhes →
                 </span>
               </div>
@@ -507,8 +531,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
             setSelectedCell(null);
             setIsEditing(true);
             setSheetOpen(true);
-          }}
-          className="rounded-2xl border-2 border-dashed border-border bg-card/50 p-6 flex flex-col items-center justify-center text-center space-y-3 min-h-[320px] cursor-pointer hover:border-primary/40 transition-colors"
+          }} className="app-card flex min-h-[320px] cursor-pointer flex-col items-center justify-center space-y-3 border-2 border-dashed border-border bg-card/50 p-6 text-center transition-colors hover:border-primary/40"
         >
           <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
             <Plus className="h-6 w-6 text-primary" />
@@ -544,8 +567,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                 {selectedCell && !isEditing && (
                   <Button
                     variant="outline"
-                    size="sm"
-                    className="h-8 gap-1.5 rounded-lg border-border"
+                    size="sm" className="h-8 gap-1.5 rounded-lg border-border"
                     onClick={() => setIsEditing(true)}
                   >
                     <Edit3 className="h-3.5 w-3.5" />
@@ -575,7 +597,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Status</p>
-                      <Badge className={cn("text-[0.65rem] border-0", selectedCell.isActive ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-600")}>
+                      <Badge className={cn("border-0 text-xs", selectedCell.isActive ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive")}>
                         {selectedCell.isActive ? "ATIVA" : "INATIVA"}
                       </Badge>
                     </div>
@@ -663,7 +685,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
               </div>
             ) : (
               // FULL EDIT AND CREATION MODE
-              <form onSubmit={handleSubmit} className="p-6 space-y-8 pb-4">
+              <form id="cell-form" onSubmit={handleSubmit} className="p-6 space-y-8 pb-4">
 
                 {/* IDENTIFICAÇÃO */}
                 <div className="space-y-4">
@@ -675,7 +697,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                   </div>
 
                   <div>
-                    <Label className={cn("text-xs text-muted-foreground", formErrors.name && "text-red-500")}>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.name && "text-destructive")}>
                       Nome da Célula *
                     </Label>
                     <Input
@@ -683,17 +705,23 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                       required
                       placeholder="Ex: Célula Ágape"
                       value={formData.name}
-                      onChange={(e) => updateField("name", e.target.value)}
-                      className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.name && "border border-red-500")}
+                      onChange={(e) => updateField("name", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.name && "border border-destructive")}
                     />
+                    <FieldError error={formErrors.name} />
                   </div>
 
                   {selectedCell ? (
                     <div className="flex items-center gap-4 p-3 rounded-xl bg-surface-high">
                       <div className="relative group shrink-0">
-                        <div className="h-16 w-24 rounded-xl bg-primary/10 flex items-center justify-center text-primary overflow-hidden border border-primary/20">
+                        <div className="relative h-16 w-24 rounded-xl bg-primary/10 flex items-center justify-center text-primary overflow-hidden border border-primary/20">
                           {selectedCell.coverUrl ? (
-                            <img src={selectedCell.coverUrl} alt="" className="h-full w-full object-cover" />
+                            <Image
+                              src={selectedCell.coverUrl}
+                              alt=""
+                              fill
+                              sizes="96px"
+                              unoptimized className="object-cover"
+                            />
                           ) : (
                             <ImageIcon className="h-6 w-6 text-primary/50" />
                           )}
@@ -702,8 +730,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                           <Camera className="h-5 w-5 text-white" />
                           <input
                             type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            className="sr-only"
+                            accept="image/jpeg,image/png,image/webp" className="sr-only"
                             onChange={async (e) => {
                               const file = e.target.files?.[0];
                               if (!file) return;
@@ -738,16 +765,16 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                   )}
 
                   <div>
-                    <Label className={cn("text-xs text-muted-foreground", formErrors.foundedAt && "text-red-500")}>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.foundedAt && "text-destructive")}>
                       Data de Fundação
                     </Label>
                     <Input
                       name="foundedAt"
                       type="date"
                       value={formData.foundedAt}
-                      onChange={(e) => updateField("foundedAt", e.target.value)}
-                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      onChange={(e) => updateField("foundedAt", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.foundedAt && "border border-destructive")}
                     />
+                    <FieldError error={formErrors.foundedAt} />
                   </div>
 
                   <div className="flex items-center justify-between rounded-xl bg-surface-high p-4">
@@ -777,7 +804,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                   </div>
 
                   <div className="relative" ref={wrapperRef}>
-                    <Label className={cn("text-xs text-muted-foreground", formErrors.leaderName && "text-red-500")}>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.leaderName && "text-destructive")}>
                       Líder Responsável *
                     </Label>
                     <div className="relative mt-1.5">
@@ -790,11 +817,11 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                           if (formData.leaderId) updateField("leaderId", ""); // clear ID if user typed
                           setLeaderSearchOpen(true);
                         }}
-                        onFocus={() => setLeaderSearchOpen(true)}
-                        className={cn("h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 pl-10", formErrors.leaderName && "border border-red-500")}
+                        onFocus={() => setLeaderSearchOpen(true)} className={cn("h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 pl-10", formErrors.leaderName && "border border-destructive")}
                       />
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     </div>
+                    <FieldError error={formErrors.leaderName} />
 
                     {leaderSearchOpen && searchLeaderQuery && !formData.leaderId && (
                       <div className="absolute z-10 w-full mt-2 rounded-xl border border-border bg-card shadow-lg overflow-hidden flex flex-col">
@@ -807,8 +834,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                               {getFilteredPeople().map((p) => (
                                 <div
                                   key={p.id}
-                                  onClick={() => selectLeader(p)}
-                                  className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
+                                  onClick={() => selectLeader(p)} className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
                                 >
                                   <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
                                     {getInitials(p.fullName)}
@@ -829,13 +855,14 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                           )}
                         </ScrollArea>
                         <div
-                          onClick={() => selectLeader(null)}
-                          className="bg-surface-lowest p-3 border-t border-border flex items-center justify-between cursor-pointer hover:bg-surface-high transition-colors"
+                          onClick={() => selectLeader(null)} className="bg-surface-lowest p-3 border-t border-border flex items-center justify-between cursor-pointer hover:bg-surface-high transition-colors"
                         >
                           <span className="text-sm font-medium text-foreground flex items-center gap-2">
                             <Plus className="h-4 w-4 text-primary" /> Cadastrar como novo líder manual
                           </span>
-                          <span className="text-xs text-muted-foreground">"{searchLeaderQuery}"</span>
+                          <span className="text-xs text-muted-foreground">
+                            &quot;{searchLeaderQuery}&quot;
+                          </span>
                         </div>
                       </div>
                     )}
@@ -849,7 +876,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                       <div>
                         <p className="text-sm font-medium text-foreground">{formData.leaderName}</p>
                         <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                          <Check className="h-3 w-3 text-green-500" /> Vínculo automático no sistema
+                          <Check className="h-3 w-3 text-success" /> Vínculo automático no sistema
                         </div>
                       </div>
                       <Button variant="ghost" size="sm" className="ml-auto" onClick={() => selectLeader(null)}>Limpar</Button>
@@ -862,29 +889,28 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                           name="leaderPhone"
                           value={formData.leaderPhone}
                           onChange={(e) => updateField("leaderPhone", maskPhone(e.target.value))}
-                          placeholder="(11) 00000-0000"
-                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                          placeholder="(11) 00000-0000" className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
                         />
                       </div>
                       <div>
-                        <Label className="text-xs text-muted-foreground">CPF do Líder</Label>
+                        <Label className={cn("text-xs text-muted-foreground", formErrors.leaderCpf && "text-destructive")}>CPF do Líder</Label>
                         <Input
                           name="leaderCpf"
                           value={formData.leaderCpf}
                           onChange={(e) => updateField("leaderCpf", maskCpf(e.target.value))}
-                          placeholder="000.000.000-00"
-                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                          placeholder="000.000.000-00" className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.leaderCpf && "border border-destructive")}
                         />
+                        <FieldError error={formErrors.leaderCpf} />
                       </div>
                       <div className="col-span-2">
-                        <Label className="text-xs text-muted-foreground">Data de Nascimento (Líder)</Label>
+                        <Label className={cn("text-xs text-muted-foreground", formErrors.leaderBirthDate && "text-destructive")}>Data de Nascimento (Líder)</Label>
                         <Input
                           type="date"
                           name="leaderBirthDate"
                           value={formData.leaderBirthDate}
-                          onChange={(e) => updateField("leaderBirthDate", e.target.value)}
-                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                          onChange={(e) => updateField("leaderBirthDate", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.leaderBirthDate && "border border-destructive")}
                         />
+                        <FieldError error={formErrors.leaderBirthDate} />
                       </div>
                     </div>
                   )}
@@ -902,36 +928,36 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                   <div className="space-y-3">
                     <div className="grid grid-cols-3 gap-3">
                       <div>
-                        <Label className="text-xs text-muted-foreground">CEP</Label>
+                        <Label className={cn("text-xs text-muted-foreground", formErrors.cep && "text-destructive")}>CEP</Label>
                         <Input
                           name="cep"
                           placeholder="00000-000"
                           value={formData.cep}
-                          onChange={handleCepChange}
-                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                          onChange={handleCepChange} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.cep && "border border-destructive")}
                         />
+                        <FieldError error={formErrors.cep} />
                       </div>
                       <div className="col-span-2">
-                        <Label className="text-xs text-muted-foreground">Rua</Label>
+                        <Label className={cn("text-xs text-muted-foreground", formErrors.street && "text-destructive")}>Rua</Label>
                         <Input
                           name="street"
                           placeholder="Nome da Rua"
                           value={formData.street}
-                          onChange={(e) => updateField('street', e.target.value)}
-                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                          onChange={(e) => updateField('street', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.street && "border border-destructive")}
                         />
+                        <FieldError error={formErrors.street} />
                       </div>
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                       <div>
-                        <Label className="text-xs text-muted-foreground">Número</Label>
+                        <Label className={cn("text-xs text-muted-foreground", formErrors.number && "text-destructive")}>Número</Label>
                         <Input
                           name="number"
                           placeholder="Nº"
                           value={formData.number}
-                          onChange={(e) => updateField('number', e.target.value)}
-                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                          onChange={(e) => updateField('number', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.number && "border border-destructive")}
                         />
+                        <FieldError error={formErrors.number} />
                       </div>
                       <div className="col-span-2">
                         <Label className="text-xs text-muted-foreground">Complemento</Label>
@@ -939,43 +965,42 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                           name="complement"
                           placeholder="Apto, Bloco..."
                           value={formData.complement}
-                          onChange={(e) => updateField('complement', e.target.value)}
-                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                          onChange={(e) => updateField('complement', e.target.value)} className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
                         />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <Label className="text-xs text-muted-foreground">Bairro</Label>
+                        <Label className={cn("text-xs text-muted-foreground", formErrors.neighborhood && "text-destructive")}>Bairro</Label>
                         <Input
                           name="neighborhood"
                           placeholder="Bairro"
                           value={formData.neighborhood}
-                          onChange={(e) => updateField('neighborhood', e.target.value)}
-                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                          onChange={(e) => updateField('neighborhood', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.neighborhood && "border border-destructive")}
                         />
+                        <FieldError error={formErrors.neighborhood} />
                       </div>
                       <div className="grid grid-cols-3 gap-3">
                         <div className="col-span-2">
-                          <Label className="text-xs text-muted-foreground">Cidade</Label>
+                          <Label className={cn("text-xs text-muted-foreground", formErrors.city && "text-destructive")}>Cidade</Label>
                           <Input
                             name="city"
                             placeholder="Cidade"
                             value={formData.city}
-                            onChange={(e) => updateField('city', e.target.value)}
-                            className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                            onChange={(e) => updateField('city', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.city && "border border-destructive")}
                           />
+                          <FieldError error={formErrors.city} />
                         </div>
                         <div>
-                          <Label className="text-xs text-muted-foreground">UF</Label>
+                          <Label className={cn("text-xs text-muted-foreground", formErrors.state && "text-destructive")}>UF</Label>
                           <Input
                             name="state"
                             placeholder="UF"
                             maxLength={2}
                             value={formData.state}
-                            onChange={(e) => updateField('state', e.target.value.toUpperCase())}
-                            className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 uppercase"
+                            onChange={(e) => updateField('state', e.target.value.toUpperCase())} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 uppercase", formErrors.state && "border border-destructive")}
                           />
+                          <FieldError error={formErrors.state} />
                         </div>
                       </div>
                     </div>
@@ -993,12 +1018,12 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
 
                   <div className="grid grid-cols-2 gap-3 pb-4">
                     <div>
-                      <Label className="text-xs text-muted-foreground">Dia da Semana</Label>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.dayOfWeek && "text-destructive")}>Dia da Semana</Label>
                       <Select
                         value={formData.dayOfWeek}
                         onValueChange={(val) => updateField("dayOfWeek", val)}
                       >
-                        <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0">
+                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.dayOfWeek && "border border-destructive")}>
                           <SelectValue placeholder="Escolha um dia..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -1011,16 +1036,17 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                           <SelectItem value="Sábados">Sábados</SelectItem>
                         </SelectContent>
                       </Select>
+                      <FieldError error={formErrors.dayOfWeek} />
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">Horário</Label>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.time && "text-destructive")}>Horário</Label>
                       <Input
                         name="time"
                         type="time"
                         value={formData.time}
-                        onChange={(e) => updateField("time", e.target.value)}
-                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        onChange={(e) => updateField("time", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.time && "border border-destructive")}
                       />
+                      <FieldError error={formErrors.time} />
                     </div>
                   </div>
                 </div>
@@ -1033,18 +1059,23 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
             <div className="border-t border-border bg-card p-6 shrink-0 z-10 flex gap-3">
               <Button
                 type="button"
-                variant="outline"
-                className="flex-1 h-11 rounded-xl border-border hover:bg-surface-high"
-                onClick={() => setIsEditing(false)}
+                variant="outline" className="flex-1 h-11 rounded-xl border-border hover:bg-surface-high"
+                onClick={() => {
+                  if (selectedCell) {
+                    setIsEditing(false);
+                  } else {
+                    setSheetOpen(false);
+                  }
+                }}
                 disabled={saving}
               >
                 Cancelar
               </Button>
               <Button
-                type="button"
-                onClick={handleSubmit}
-                disabled={saving}
-                className="flex-1 h-11 rounded-xl gradient-primary text-white shadow-lg hover:shadow-primary/25 transition-all gap-2"
+                type="submit"
+                form="cell-form"
+                variant="brand"
+                disabled={saving} className="h-11 flex-1 gap-2"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
                 {selectedCell ? "Salvar Alterações" : "Cadastrar Célula"}
@@ -1054,14 +1085,13 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
           {!isEditing && selectedCell && (
             <div className="border-t border-border bg-card p-6 shrink-0 flex gap-3 h-[88px] items-center justify-between">
               <Button
-                variant="destructive"
-                className="h-11 rounded-xl w-11 p-0 shrink-0 bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white"
+                variant="destructive" className="h-11 w-11 shrink-0 p-0"
                 onClick={() => requestDelete(selectedCell.id)}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
               <Button
-                className="flex-1 h-11 rounded-xl gradient-primary text-white"
+                variant="brand" className="h-11 flex-1"
                 onClick={() => setIsEditing(true)}
               >
                 <Edit3 className="mr-2 h-4 w-4" /> Editar Célula

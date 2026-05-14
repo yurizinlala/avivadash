@@ -3,29 +3,41 @@
 import { prisma } from "@/lib/prisma";
 import { reportSchema, type ReportFormData } from "@/lib/validations/report";
 import { revalidatePath } from "next/cache";
+import {
+  getPermissionErrorMessage,
+  requireAuth,
+  requireRole,
+  WRITE_ROLES,
+} from "@/lib/permissions";
 
 export async function getReports() {
+  await requireAuth();
+
   return prisma.monthlyReport.findMany({
     orderBy: { referenceMonth: "desc" },
   });
 }
 
 export async function getLatestReport() {
+  await requireAuth();
+
   return prisma.monthlyReport.findFirst({
     orderBy: { referenceMonth: "desc" },
   });
 }
 
 export async function createReport(formData: ReportFormData) {
-  const result = reportSchema.safeParse(formData);
-  if (!result.success) {
-    return { success: false, error: result.error.flatten().fieldErrors };
-  }
-
-  const data = result.data;
-  const refMonth = new Date(data.referenceMonth);
-
   try {
+    await requireRole(WRITE_ROLES);
+
+    const result = reportSchema.safeParse(formData);
+    if (!result.success) {
+      return { success: false, error: result.error.flatten().fieldErrors };
+    }
+
+    const data = result.data;
+    const refMonth = new Date(`${data.referenceMonth}-01T12:00:00Z`);
+
     // Upsert: update if same month already exists
     await prisma.monthlyReport.upsert({
       where: { referenceMonth: refMonth },
@@ -62,6 +74,9 @@ export async function createReport(formData: ReportFormData) {
     revalidatePath("/");
     return { success: true };
   } catch (e) {
+    const permissionMessage = getPermissionErrorMessage(e);
+    if (permissionMessage) return { success: false, error: permissionMessage };
+
     console.error("Error creating report:", e);
     return { success: false, error: "Erro ao salvar relatório." };
   }

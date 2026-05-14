@@ -7,9 +7,12 @@
 
 import fs from "fs/promises";
 import path from "path";
+import { randomUUID } from "crypto";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 const PUBLIC_PREFIX = "/uploads";
+const UPLOAD_DIR_RESOLVED = path.resolve(UPLOAD_DIR);
+const ALLOWED_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
 // Ensure upload directory exists
 async function ensureDir() {
@@ -37,9 +40,9 @@ export async function saveFile(
   await ensureDir();
 
   // Generate unique filename to avoid collisions
-  const ext = path.extname(fileName);
-  const base = path.basename(fileName, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
-  const uniqueName = `${base}_${Date.now()}${ext}`;
+  const ext = path.extname(fileName).toLowerCase();
+  const safeExt = ALLOWED_EXTENSIONS.has(ext) ? ext : ".bin";
+  const uniqueName = `${randomUUID()}${safeExt}`;
 
   const filePath = path.join(UPLOAD_DIR, uniqueName);
   await fs.writeFile(filePath, buffer);
@@ -56,8 +59,9 @@ export async function saveFile(
 export async function deleteFile(publicUrl: string): Promise<void> {
   if (!publicUrl.startsWith(PUBLIC_PREFIX)) return;
 
-  const fileName = publicUrl.replace(`${PUBLIC_PREFIX}/`, "");
-  const filePath = path.join(UPLOAD_DIR, fileName);
+  const fileName = path.basename(publicUrl.replace(`${PUBLIC_PREFIX}/`, ""));
+  const filePath = path.resolve(UPLOAD_DIR, fileName);
+  if (!filePath.startsWith(`${UPLOAD_DIR_RESOLVED}${path.sep}`)) return;
 
   try {
     await fs.unlink(filePath);

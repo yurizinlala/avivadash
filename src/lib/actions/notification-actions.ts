@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/permissions";
 
 export interface Notification {
   id: string;
@@ -12,7 +13,13 @@ export interface Notification {
 }
 
 export async function getNotifications(): Promise<Notification[]> {
+  await requireAuth();
+
   const today = new Date();
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfTomorrow = new Date(startOfToday);
+  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
   const todayMonth = today.getMonth();
   const todayDay = today.getDate();
   const notifications: Notification[] = [];
@@ -40,12 +47,13 @@ export async function getNotifications(): Promise<Notification[]> {
   }
 
   // 2) Upcoming events in the next 3 days
-  const threeDaysLater = new Date();
+  const threeDaysLater = new Date(startOfToday);
   threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+  threeDaysLater.setHours(23, 59, 59, 999);
 
   const upcomingEvents = await prisma.event.findMany({
     where: {
-      date: { gte: today, lte: threeDaysLater },
+      date: { gte: startOfToday, lte: threeDaysLater },
     },
     orderBy: { date: "asc" },
     take: 5,
@@ -56,7 +64,9 @@ export async function getNotifications(): Promise<Notification[]> {
     const isToday =
       eventDate.getDate() === todayDay && eventDate.getMonth() === todayMonth;
     const isTomorrow =
-      eventDate.getDate() === todayDay + 1 && eventDate.getMonth() === todayMonth;
+      eventDate.getFullYear() === startOfTomorrow.getFullYear() &&
+      eventDate.getMonth() === startOfTomorrow.getMonth() &&
+      eventDate.getDate() === startOfTomorrow.getDate();
 
     notifications.push({
       id: `event-${event.id}`,

@@ -41,7 +41,7 @@ export function LoginForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-600 dark:text-red-400">
+        <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -56,8 +56,7 @@ export function LoginForm() {
           type="email"
           required
           autoComplete="email"
-          placeholder="admin@ieab.com"
-          className="mt-1.5 h-11 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+          placeholder="admin@ieab.com" className="mt-1.5 h-11 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
         />
       </div>
 
@@ -72,13 +71,11 @@ export function LoginForm() {
             type={showPassword ? "text" : "password"}
             required
             autoComplete="current-password"
-            placeholder="••••••••"
-            className="h-11 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 pr-10"
+            placeholder="••••••••" className="h-11 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 pr-10"
           />
           <button
             type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
           >
             {showPassword ? (
               <EyeOff className="h-4 w-4" />
@@ -91,8 +88,8 @@ export function LoginForm() {
 
       <Button
         type="submit"
-        disabled={loading}
-        className="w-full h-11 rounded-xl gradient-primary text-white font-medium text-sm gap-2 mt-2"
+        variant="brand"
+        disabled={loading} className="mt-2 h-11 w-full gap-2 text-sm font-medium"
       >
         {loading ? (
           <Loader2 className="h-4 w-4 animate-spin" />

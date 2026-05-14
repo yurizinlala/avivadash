@@ -6,9 +6,9 @@ import { Search, Users, Network, Calendar, X, Loader2, ArrowRight } from "lucide
 import { globalSearch } from "@/lib/actions/search-actions";
 
 const TYPE_CONFIG = {
-  person: { icon: Users, label: "Pessoas", color: "text-blue-500 bg-blue-500/10" },
-  cell: { icon: Network, label: "Células", color: "text-amber-500 bg-amber-500/10" },
-  event: { icon: Calendar, label: "Agenda", color: "text-emerald-500 bg-emerald-500/10" },
+  person: { icon: Users, label: "Pessoas", color: "icon-tile-primary" },
+  cell: { icon: Network, label: "Células", color: "icon-tile-gold" },
+  event: { icon: Calendar, label: "Agenda", color: "icon-tile-success" },
 };
 
 interface GlobalSearchProps {
@@ -110,14 +110,13 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm animate-in fade-in-0 duration-200"
+      <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm animate-in fade-in-0 duration-200"
         onClick={onClose}
       />
 
       {/* Modal */}
       <div className="fixed inset-x-0 top-[15%] z-50 mx-auto w-full max-w-[560px] px-4 animate-in fade-in-0 slide-in-from-top-4 duration-200">
-        <div className="rounded-2xl bg-card border border-border shadow-2xl overflow-hidden">
+        <div className="app-card overflow-hidden shadow-2xl">
           {/* Search Input */}
           <div className="flex items-center gap-3 px-4 border-b border-border">
             <Search className="h-5 w-5 text-muted-foreground shrink-0" />
@@ -127,13 +126,11 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Buscar membros, células, eventos..."
-              className="flex-1 h-14 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+              placeholder="Buscar membros, células, eventos..." className="flex-1 h-14 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
             />
             {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
             <button
-              onClick={onClose}
-              className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-high text-muted-foreground hover:text-foreground transition-colors"
+              onClick={onClose} className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-high text-muted-foreground hover:text-foreground transition-colors"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -163,7 +160,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                 const Icon = config.icon;
                 return (
                   <div key={type} className="mb-2 last:mb-0">
-                    <p className="text-[0.6rem] font-semibold uppercase tracking-widest text-muted-foreground px-2 py-1.5">
+                    <p className="section-kicker px-2 py-1.5">
                       {config.label}
                     </p>
                     {items.map((item) => {
@@ -172,15 +169,13 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                       return (
                         <button
                           key={item.id}
-                          onClick={() => handleNavigate(item.href)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors ${
+                          onClick={() => handleNavigate(item.href)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
                             isSelected
                               ? "bg-primary/10 text-foreground"
                               : "text-foreground hover:bg-surface-high"
                           }`}
                         >
-                          <div
-                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${config.color}`}
+                          <div className={`icon-tile h-8 w-8 rounded-lg ${config.color}`}
                           >
                             <Icon className="h-4 w-4" />
                           </div>
@@ -205,7 +200,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
           </div>
 
           {/* Footer */}
-          <div className="border-t border-border px-4 py-2.5 flex items-center gap-4 text-[0.6rem] text-muted-foreground">
+          <div className="border-t border-border px-4 py-2.5 flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <kbd className="px-1.5 py-0.5 rounded bg-surface-high border border-border font-mono">↑↓</kbd>
               Navegar

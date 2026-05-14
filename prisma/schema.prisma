@@ -26,24 +26,24 @@ model User {
 }
 
 // ============================================
-// IEAB GESTÃO — Data Models (SQLite compatible)
+// IEAB GESTAO - Data Models
 // ============================================
 
 model Person {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   fullName      String
-  cpf           String?  @unique
+  cpf           String?   @unique
   email         String?
   phone         String?
   birthDate     DateTime?
-  maritalStatus String?  // SOLTEIRO | CASADO | DIVORCIADO | VIUVO
+  maritalStatus String? // SOLTEIRO | CASADO | DIVORCIADO | VIUVO
   weddingDate   DateTime?
   profession    String?
-  personType    String   @default("VISITANTE") // MEMBRO | VISITANTE | CONGREGADO
-  memberStatus  String   @default("ATIVO")     // ATIVO | INATIVO | TRANSFERIDO | FALECIDO
+  personType    String    @default("VISITANTE") // MEMBRO | VISITANTE | CONGREGADO
+  memberStatus  String    @default("ATIVO") // ATIVO | INATIVO | TRANSFERIDO | FALECIDO
 
   // Ecclesiastical data
-  isBaptized     Boolean  @default(false)
+  isBaptized     Boolean   @default(false)
   baptismDate    DateTime?
   conversionDate DateTime?
 
@@ -58,8 +58,8 @@ model Person {
 
   // Relationships
   cellId   String?
-  cell     Cell?    @relation("CellMember", fields: [cellId], references: [id])
-  ledCells Cell[]   @relation("CellLeader")
+  cell     Cell?   @relation("CellMember", fields: [cellId], references: [id])
+  ledCells Cell[]  @relation("CellLeader")
 
   // Metadata
   notes     String?
@@ -71,10 +71,10 @@ model Person {
 }
 
 model Cell {
-  id          String  @id @default(cuid())
-  name        String
-  coverUrl    String?
-  foundedAt   DateTime?
+  id        String    @id @default(cuid())
+  name      String
+  coverUrl  String?
+  foundedAt DateTime?
 
   // Leader Information
   leaderName      String
@@ -92,9 +92,9 @@ model Cell {
   state        String?
 
   // Functioning
-  dayOfWeek   String?
-  time        String?
-  isActive    Boolean @default(true)
+  dayOfWeek String?
+  time      String?
+  isActive  Boolean @default(true)
 
   // Geolocation (for map)
   latitude  Float?
@@ -119,7 +119,7 @@ model Event {
   date        DateTime
   time        String?
   location    String?
-  type        String?  // culto | reuniao | congresso
+  type        String? // culto | reuniao | congresso
   isRecurrent Boolean  @default(false)
 
   // Metadata
@@ -134,11 +134,11 @@ model MonthlyReport {
   referenceMonth DateTime @unique
 
   // Attendance
-  totalMembers     Int   @default(0)
-  totalVisitors    Int   @default(0)
-  totalBaptisms    Int   @default(0)
-  totalConversions Int   @default(0)
-  totalTransfers   Int   @default(0)
+  totalMembers     Int @default(0)
+  totalVisitors    Int @default(0)
+  totalBaptisms    Int @default(0)
+  totalConversions Int @default(0)
+  totalTransfers   Int @default(0)
 
   // Financial
   totalTithes      Float @default(0)

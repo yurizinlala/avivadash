@@ -1,11 +1,10 @@
 "use client";
 
 import React from "react";
-import { MapPin, Navigation, Loader2, Users, Clock, RefreshCw } from "lucide-react";
+import Image from "next/image";
+import { Navigation, Loader2, Users, Clock, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-// Leaflet types
 import type L from "leaflet";
 
 interface CellMapData {
@@ -28,6 +27,75 @@ interface CellMapProps {
   geocoding?: boolean;
 }
 
+type LeafletDefaultIconPrototype = L.Icon.Default & {
+  _getIconUrl?: unknown;
+};
+
+function createTextLine(text: string) {
+  const line = document.createElement("p");
+  line.textContent = text;
+  Object.assign(line.style, {
+    fontSize: "11px",
+    color: "#666",
+    margin: "0 0 2px 0",
+  });
+  return line;
+}
+
+function createPopupContent(cell: CellMapData) {
+  const container = document.createElement("div");
+  Object.assign(container.style, {
+    minWidth: "200px",
+    maxWidth: "240px",
+    fontFamily: "system-ui, -apple-system, sans-serif",
+  });
+
+  if (cell.coverUrl) {
+    const image = document.createElement("img");
+    image.src = cell.coverUrl;
+    image.alt = cell.name;
+    Object.assign(image.style, {
+      width: "calc(100% + 24px)",
+      height: "80px",
+      objectFit: "cover",
+      borderRadius: "8px 8px 0 0",
+      margin: "-12px -12px 8px -12px",
+    });
+    container.appendChild(image);
+  }
+
+  const title = document.createElement("p");
+  title.textContent = cell.name;
+  Object.assign(title.style, {
+    fontSize: "13px",
+    fontWeight: "700",
+    margin: "0 0 4px 0",
+    color: "#1a1a1a",
+  });
+  container.appendChild(title);
+
+  container.appendChild(createTextLine(`Líder: ${cell.leaderName}`));
+
+  if (cell.dayOfWeek) {
+    container.appendChild(
+      createTextLine(`Dia: ${cell.dayOfWeek}${cell.time ? ` às ${cell.time}` : ""}`)
+    );
+  }
+
+  if (cell.address) {
+    const address = createTextLine(`Endereço: ${cell.address}`);
+    address.style.margin = "4px 0 0 0";
+    container.appendChild(address);
+  }
+
+  const members = createTextLine(`Membros: ${cell.memberCount}`);
+  members.style.color = "#888";
+  members.style.margin = "4px 0 0 0";
+  container.appendChild(members);
+
+  return container;
+}
+
 export function CellMap({ cells, pendingGeocode, onGeocode, geocoding }: CellMapProps) {
   const mapRef = React.useRef<HTMLDivElement>(null);
   const mapInstance = React.useRef<L.Map | null>(null);
@@ -41,43 +109,37 @@ export function CellMap({ cells, pendingGeocode, onGeocode, geocoding }: CellMap
   React.useEffect(() => {
     if (!mounted || !mapRef.current || mapInstance.current) return;
 
-    // Dynamic import of leaflet (avoids SSR)
-    import("leaflet").then((L) => {
+    import("leaflet").then((Leaflet) => {
       if (!mapRef.current) return;
 
-      // Fix default marker icons
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
-      L.Icon.Default.mergeOptions({
+      delete (Leaflet.Icon.Default.prototype as LeafletDefaultIconPrototype)._getIconUrl;
+      Leaflet.Icon.Default.mergeOptions({
         iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
         iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
         shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
 
       const defaultCenter: [number, number] =
-        cells.length > 0
-          ? [cells[0].latitude, cells[0].longitude]
-          : [-15.7801, -47.9292]; // Brasília
+        cells.length > 0 ? [cells[0].latitude, cells[0].longitude] : [-15.7801, -47.9292];
 
-      const map = L.map(mapRef.current, {
+      const map = Leaflet.map(mapRef.current, {
         center: defaultCenter,
         zoom: cells.length > 0 ? 13 : 5,
         scrollWheelZoom: true,
         zoomControl: true,
       });
 
-      // OSM tiles with a clean style
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      Leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution:
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 19,
       }).addTo(map);
 
-      // Custom marker icon
-      const customIcon = L.divIcon({
+      const customIcon = Leaflet.divIcon({
         className: "custom-cell-marker",
         html: `<div style="
           width: 36px; height: 36px;
-          background: linear-gradient(135deg, #1e3a5f, #2d5a8e);
+          background: linear-gradient(135deg, #003275, #1d4994);
           border: 3px solid white;
           border-radius: 50%;
           box-shadow: 0 2px 8px rgba(0,0,0,0.3);
@@ -92,49 +154,24 @@ export function CellMap({ cells, pendingGeocode, onGeocode, geocoding }: CellMap
         popupAnchor: [0, -36],
       });
 
-      // Add markers
       cells.forEach((cell) => {
-        const coverImg = cell.coverUrl
-          ? `<img src="${cell.coverUrl}" style="width:100%;height:80px;object-fit:cover;border-radius:8px 8px 0 0;margin:-12px -12px 8px -12px;width:calc(100% + 24px);" />`
-          : "";
-
-        const marker = L.marker([cell.latitude, cell.longitude], {
+        const marker = Leaflet.marker([cell.latitude, cell.longitude], {
           icon: customIcon,
         }).addTo(map);
 
-        marker.bindPopup(
-          `<div style="min-width:200px;max-width:240px;font-family:system-ui,-apple-system,sans-serif;">
-            ${coverImg}
-            <p style="font-size:13px;font-weight:700;margin:0 0 4px 0;color:#1a1a1a;">${cell.name}</p>
-            <p style="font-size:11px;color:#666;margin:0 0 2px 0;">
-              <strong>Líder:</strong> ${cell.leaderName}
-            </p>
-            ${
-              cell.dayOfWeek
-                ? `<p style="font-size:11px;color:#666;margin:0 0 2px 0;">
-                    <strong>Dia:</strong> ${cell.dayOfWeek}${cell.time ? ` às ${cell.time}` : ""}
-                  </p>`
-                : ""
-            }
-            ${
-              cell.address
-                ? `<p style="font-size:11px;color:#666;margin:4px 0 0 0;">📍 ${cell.address}</p>`
-                : ""
-            }
-            <p style="font-size:11px;color:#888;margin:4px 0 0 0;">👥 ${cell.memberCount} membro(s)</p>
-          </div>`,
-          { maxWidth: 260, className: "cell-popup" }
-        );
+        marker.bindPopup(createPopupContent(cell), {
+          maxWidth: 260,
+          className: "cell-popup",
+        });
 
         marker.on("click", () => {
           setSelectedCell(cell);
         });
       });
 
-      // Fit bounds if multiple cells
       if (cells.length > 1) {
-        const group = L.featureGroup(
-          cells.map((c) => L.marker([c.latitude, c.longitude]))
+        const group = Leaflet.featureGroup(
+          cells.map((cell) => Leaflet.marker([cell.latitude, cell.longitude]))
         );
         map.fitBounds(group.getBounds().pad(0.2));
       }
@@ -152,7 +189,7 @@ export function CellMap({ cells, pendingGeocode, onGeocode, geocoding }: CellMap
 
   if (!mounted) {
     return (
-      <div className="h-[calc(100vh-14rem)] rounded-2xl bg-surface-high flex items-center justify-center">
+      <div className="flex h-[calc(100vh-14rem)] items-center justify-center rounded-xl bg-surface-high">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -160,9 +197,9 @@ export function CellMap({ cells, pendingGeocode, onGeocode, geocoding }: CellMap
 
   if (cells.length === 0 && pendingGeocode === 0) {
     return (
-      <div className="h-[calc(100vh-14rem)] rounded-2xl bg-surface-high flex flex-col items-center justify-center text-center p-8">
-        <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-          <Navigation className="h-8 w-8 text-primary" />
+      <div className="flex h-[calc(100vh-14rem)] flex-col items-center justify-center rounded-xl bg-surface-high p-8 text-center">
+        <div className="icon-tile icon-tile-primary mb-4 h-14 w-14">
+          <Navigation className="h-7 w-7" />
         </div>
         <h3 className="text-lg font-heading font-bold text-foreground mb-1">
           Nenhuma célula no mapa
@@ -177,9 +214,8 @@ export function CellMap({ cells, pendingGeocode, onGeocode, geocoding }: CellMap
 
   return (
     <div className="space-y-4">
-      {/* Geocode banner */}
       {pendingGeocode > 0 && (
-        <div className="flex items-center justify-between rounded-xl bg-gold/10 border border-gold/20 p-4">
+        <div className="app-card flex items-center justify-between gap-4 border-gold/20 bg-gold/10 p-4">
           <div>
             <p className="text-sm font-medium text-foreground">
               {pendingGeocode} célula(s) com endereço mas sem localização no mapa
@@ -190,7 +226,7 @@ export function CellMap({ cells, pendingGeocode, onGeocode, geocoding }: CellMap
           </div>
           <Button
             size="sm"
-            className="gradient-primary text-white rounded-xl gap-2"
+            variant="brand" className="gap-2"
             onClick={onGeocode}
             disabled={geocoding}
           >
@@ -205,41 +241,35 @@ export function CellMap({ cells, pendingGeocode, onGeocode, geocoding }: CellMap
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-4">
-        {/* Map */}
-        <div className="h-[calc(100vh-18rem)] min-h-[400px] rounded-2xl overflow-hidden border border-border shadow-ambient relative">
+        <div className="relative isolate z-0 h-[calc(100vh-18rem)] min-h-[400px] overflow-hidden rounded-xl border border-border shadow-ambient">
           <div ref={mapRef} className="h-full w-full" />
         </div>
 
-        {/* Sidebar - Cell list */}
         <div className="space-y-4 max-h-[calc(100vh-18rem)] overflow-y-auto pr-2">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground px-1">
             {cells.length} célula(s) no mapa
           </p>
           {cells.map((cell) => (
             <div
-              key={cell.id}
-              className={cn(
-                "rounded-xl bg-card border border-border/50 p-4 cursor-pointer transition-all hover:border-primary/30 hover:shadow-md",
+              key={cell.id} className={cn(
+                "app-card cursor-pointer p-4 transition-all hover:border-primary/30 hover:shadow-md",
                 selectedCell?.id === cell.id && "border-primary/50 shadow-md ring-1 ring-primary/20"
               )}
               onClick={() => {
                 setSelectedCell(cell);
-                if (mapInstance.current) {
-                  mapInstance.current.setView(
-                    [cell.latitude, cell.longitude],
-                    16,
-                    { animate: true }
-                  );
-                }
+                mapInstance.current?.setView([cell.latitude, cell.longitude], 16, {
+                  animate: true,
+                });
               }}
             >
-              {/* Cover image */}
               {cell.coverUrl && (
-                <div className="h-24 rounded-t-xl overflow-hidden mb-3 -mx-4 -mt-4">
-                  <img
+                <div className="relative h-24 rounded-t-xl overflow-hidden mb-3 -mx-4 -mt-4">
+                  <Image
                     src={cell.coverUrl}
                     alt={cell.name}
-                    className="w-full h-full object-cover"
+                    fill
+                    sizes="300px"
+                    unoptimized className="object-cover"
                   />
                 </div>
               )}

@@ -33,8 +33,8 @@ export function ConfirmDeleteDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[420px]" showCloseButton={false}>
         <DialogHeader>
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-500/15 mb-2">
-            <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
+          <div className="icon-tile icon-tile-danger mx-auto mb-2 h-12 w-12">
+            <AlertTriangle className="h-6 w-6" />
           </div>
           <DialogTitle className="text-center text-lg">{title}</DialogTitle>
           <DialogDescription className="text-center">
@@ -43,16 +43,14 @@ export function ConfirmDeleteDialog({
         </DialogHeader>
         <DialogFooter className="flex-row gap-3 sm:justify-center">
           <Button
-            variant="outline"
-            className="flex-1 h-10 rounded-xl"
+            variant="outline" className="flex-1"
             onClick={() => onOpenChange(false)}
             disabled={loading}
           >
             Cancelar
           </Button>
           <Button
-            variant="destructive"
-            className="flex-1 h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white"
+            variant="destructive" className="flex-1"
             onClick={onConfirm}
             disabled={loading}
           >

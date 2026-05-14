@@ -1,44 +1,105 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
-import { hashPassword, verifyPassword, getSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma";
+import { createSession, hashPassword, verifyPassword } from "@/lib/auth";
+import { getPermissionErrorMessage, requireAuth } from "@/lib/permissions";
 
 export async function changePassword(currentPassword: string, newPassword: string) {
-  const session = await getSession();
-  if (!session) return { success: false, error: "Sessão expirada." };
+  try {
+    const session = await requireAuth();
 
-  const user = await prisma.user.findUnique({ where: { id: session.userId } });
-  if (!user) return { success: false, error: "Usuário não encontrado." };
+    const user = await prisma.user.findUnique({ where: { id: session.userId } });
+    if (!user) return { success: false, error: "Usuário não encontrado." };
 
-  const valid = await verifyPassword(currentPassword, user.passwordHash);
-  if (!valid) return { success: false, error: "Senha atual incorreta." };
+    if (!currentPassword) {
+      return { success: false, error: "Informe a senha atual." };
+    }
 
-  if (newPassword.length < 6) {
-    return { success: false, error: "A nova senha deve ter pelo menos 6 caracteres." };
+    const valid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!valid) return { success: false, error: "Senha atual incorreta." };
+
+    if (newPassword.length < 6) {
+      return { success: false, error: "A nova senha deve ter pelo menos 6 caracteres." };
+    }
+
+    if (currentPassword === newPassword) {
+      return { success: false, error: "A nova senha precisa ser diferente da senha atual." };
+    }
+
+    const newHash = await hashPassword(newPassword);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: newHash },
+    });
+
+    revalidatePath("/configuracoes");
+    return { success: true };
+  } catch (error) {
+    const permissionMessage = getPermissionErrorMessage(error);
+    if (permissionMessage) return { success: false, error: permissionMessage };
+
+    throw error;
   }
-
-  const newHash = await hashPassword(newPassword);
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash: newHash },
-  });
-
-  revalidatePath("/configuracoes");
-  return { success: true };
 }
 
-export async function updateProfile(name: string) {
-  const session = await getSession();
-  if (!session) return { success: false, error: "Sessão expirada." };
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
-  if (!name.trim()) return { success: false, error: "Nome é obrigatório." };
+export async function updateProfile(data: { name: string; email: string }) {
+  try {
+    const session = await requireAuth();
+    const trimmedName = data.name.trim();
+    const normalizedEmail = data.email.trim().toLowerCase();
 
-  await prisma.user.update({
-    where: { id: session.userId },
-    data: { name: name.trim() },
-  });
+    if (!trimmedName) return { success: false, error: "Nome é obrigatório." };
+    if (!normalizedEmail) return { success: false, error: "E-mail é obrigatório." };
+    if (!isValidEmail(normalizedEmail)) {
+      return { success: false, error: "Informe um e-mail válido." };
+    }
 
-  revalidatePath("/configuracoes");
-  return { success: true };
+    const emailOwner = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true },
+    });
+
+    if (emailOwner && emailOwner.id !== session.userId) {
+      return { success: false, error: "Este e-mail já está em uso por outra conta." };
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: session.userId },
+      data: {
+        name: trimmedName,
+        email: normalizedEmail,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+      },
+    });
+
+    await createSession({
+      userId: updatedUser.id,
+      email: updatedUser.email,
+      name: updatedUser.name,
+      role: updatedUser.role,
+    });
+    revalidatePath("/configuracoes");
+    return {
+      success: true,
+      user: {
+        email: updatedUser.email,
+        name: updatedUser.name,
+      },
+    };
+  } catch (error) {
+    const permissionMessage = getPermissionErrorMessage(error);
+    if (permissionMessage) return { success: false, error: permissionMessage };
+
+    throw error;
+  }
 }

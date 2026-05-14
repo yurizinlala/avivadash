@@ -4,13 +4,22 @@ import { prisma } from "@/lib/prisma";
 import { cellSchema, type CellFormData } from "@/lib/validations/cell";
 import { revalidatePath } from "next/cache";
 import { geocodeAddress } from "@/lib/geocoding";
+import { deleteFile } from "@/lib/storage";
+import {
+  getPermissionErrorMessage,
+  requireAuth,
+  requireRole,
+  WRITE_ROLES,
+} from "@/lib/permissions";
 
 export async function getCells(search?: string) {
+  await requireAuth();
+
   const where: Record<string, unknown> = {};
   if (search) {
     where.OR = [
-      { name: { contains: search } },
-      { leaderName: { contains: search } },
+      { name: { contains: search, mode: "insensitive" } },
+      { leaderName: { contains: search, mode: "insensitive" } },
     ];
   }
 
@@ -44,6 +53,8 @@ export async function getCells(search?: string) {
 }
 
 export async function getCellsSimple() {
+  await requireAuth();
+
   return prisma.cell.findMany({
     where: { isActive: true },
     select: { id: true, name: true },
@@ -52,6 +63,8 @@ export async function getCellsSimple() {
 }
 
 export async function getCellById(id: string) {
+  await requireAuth();
+
   return prisma.cell.findUnique({
     where: { id },
     include: {
@@ -64,12 +77,14 @@ export async function getCellById(id: string) {
 }
 
 export async function createCell(formData: CellFormData) {
-  const result = cellSchema.safeParse(formData);
-  if (!result.success) {
-    return { success: false, error: result.error.flatten().fieldErrors };
-  }
-
   try {
+    await requireRole(WRITE_ROLES);
+
+    const result = cellSchema.safeParse(formData);
+    if (!result.success) {
+      return { success: false, error: result.error.flatten().fieldErrors };
+    }
+
     const d = result.data;
 
     // Geocode address if provided
@@ -124,18 +139,23 @@ export async function createCell(formData: CellFormData) {
     revalidatePath("/");
     return { success: true };
   } catch (e) {
+    const permissionMessage = getPermissionErrorMessage(e);
+    if (permissionMessage) return { success: false, error: permissionMessage };
+
     console.error("Error creating cell:", e);
     return { success: false, error: "Erro ao cadastrar célula." };
   }
 }
 
 export async function updateCell(id: string, formData: CellFormData) {
-  const result = cellSchema.safeParse(formData);
-  if (!result.success) {
-    return { success: false, error: result.error.flatten().fieldErrors };
-  }
-
   try {
+    await requireRole(WRITE_ROLES);
+
+    const result = cellSchema.safeParse(formData);
+    if (!result.success) {
+      return { success: false, error: result.error.flatten().fieldErrors };
+    }
+
     const d = result.data;
 
     // Geocode address if changed
@@ -191,6 +211,9 @@ export async function updateCell(id: string, formData: CellFormData) {
     revalidatePath("/");
     return { success: true };
   } catch (e) {
+    const permissionMessage = getPermissionErrorMessage(e);
+    if (permissionMessage) return { success: false, error: permissionMessage };
+
     console.error("Error updating cell:", e);
     return { success: false, error: "Erro ao atualizar célula." };
   }
@@ -198,22 +221,39 @@ export async function updateCell(id: string, formData: CellFormData) {
 
 export async function deleteCell(id: string) {
   try {
+    await requireRole(WRITE_ROLES);
+
+    const cell = await prisma.cell.findUnique({
+      where: { id },
+      select: { coverUrl: true },
+    });
+
     // Remove all member associations first
     await prisma.person.updateMany({
       where: { cellId: id },
       data: { cellId: null },
     });
     await prisma.cell.delete({ where: { id } });
+
+    if (cell?.coverUrl) {
+      await deleteFile(cell.coverUrl);
+    }
+
     revalidatePath("/celulas");
     revalidatePath("/");
     return { success: true };
   } catch (e) {
+    const permissionMessage = getPermissionErrorMessage(e);
+    if (permissionMessage) return { success: false, error: permissionMessage };
+
     console.error("Error deleting cell:", e);
     return { success: false, error: "Erro ao excluir célula." };
   }
 }
 
 export async function getCellStats() {
+  await requireAuth();
+
   const [totalCells, activeCells] = await Promise.all([
     prisma.cell.count(),
     prisma.cell.count({ where: { isActive: true } }),

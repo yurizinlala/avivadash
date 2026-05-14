@@ -2,7 +2,11 @@ import { PrismaClient } from "@prisma/client";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const connectionString = `${process.env.DATABASE_URL}`.replace(/"/g, "");
+const connectionString = process.env.DATABASE_URL?.replace(/"/g, "");
+if (!connectionString) {
+  throw new Error("DATABASE_URL must be configured.");
+}
+
 const pool = new Pool({
   connectionString,
   ssl: { rejectUnauthorized: false },

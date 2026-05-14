@@ -23,20 +23,15 @@ export function EmptyState({
   className,
 }: EmptyStateProps) {
   return (
-    <div
-      className={cn(
+    <div className={cn(
         "flex flex-col items-center justify-center py-16 px-6 text-center",
         className
       )}
     >
-      {/* Icon Container */}
-      <div className="relative mb-6">
-        <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary/40">
+      <div className="mb-5">
+        <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-primary/10 text-primary">
           {icon}
         </div>
-        {/* Decorative dots */}
-        <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-primary/20 animate-pulse" />
-        <div className="absolute -bottom-1 -left-1 h-2 w-2 rounded-full bg-gold/30 animate-pulse delay-500" />
       </div>
 
       {/* Text */}
@@ -51,7 +46,7 @@ export function EmptyState({
       {actionLabel && onAction && (
         <Button
           onClick={onAction}
-          className="gradient-primary text-white rounded-xl gap-2 shadow-sm"
+          variant="brand"
         >
           <Plus className="h-4 w-4" />
           {actionLabel}

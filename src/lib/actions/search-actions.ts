@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/permissions";
 
 interface SearchResult {
   id: string;
@@ -11,6 +12,8 @@ interface SearchResult {
 }
 
 export async function globalSearch(query: string): Promise<SearchResult[]> {
+  await requireAuth();
+
   if (!query || query.trim().length < 2) return [];
 
   const q = query.trim();
@@ -19,7 +22,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
   // Search Persons
   const persons = await prisma.person.findMany({
     where: {
-      fullName: { contains: q },
+      fullName: { contains: q, mode: "insensitive" },
     },
     take: 5,
     select: { id: true, fullName: true, personType: true, phone: true },
@@ -30,7 +33,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
       title: p.fullName,
       subtitle: `${p.personType} ${p.phone ? `• ${p.phone}` : ""}`,
       type: "person",
-      href: `/pessoas?highlight=${p.id}`,
+      href: `/pessoas?search=${encodeURIComponent(p.fullName)}`,
     });
   }
 
@@ -38,8 +41,8 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
   const cells = await prisma.cell.findMany({
     where: {
       OR: [
-        { name: { contains: q } },
-        { leaderName: { contains: q } },
+        { name: { contains: q, mode: "insensitive" } },
+        { leaderName: { contains: q, mode: "insensitive" } },
       ],
     },
     take: 5,
@@ -59,8 +62,8 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
   const events = await prisma.event.findMany({
     where: {
       OR: [
-        { title: { contains: q } },
-        { description: { contains: q } },
+        { title: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
       ],
     },
     take: 5,
@@ -73,7 +76,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
       title: e.title,
       subtitle: `${dateStr} ${e.location ? `• ${e.location}` : ""}`,
       type: "event",
-      href: `/agenda?highlight=${e.id}`,
+      href: `/agenda?eventId=${e.id}`,
     });
   }
 

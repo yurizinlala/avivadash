@@ -1,8 +1,8 @@
-import { Skeleton, StatsRowSkeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function CellMapLoading() {
   return (
-    <div className="space-y-6">
+    <div className="page-stack">
       <div className="flex items-center justify-between">
         <div className="space-y-2">
           <Skeleton className="h-3 w-32" />
@@ -11,7 +11,7 @@ export default function CellMapLoading() {
         </div>
         <Skeleton className="h-10 w-36 rounded-xl" />
       </div>
-      <Skeleton className="h-[calc(100vh-14rem)] w-full rounded-2xl" />
+      <Skeleton className="h-[calc(100vh-14rem)] w-full rounded-xl" />
     </div>
   );
 }

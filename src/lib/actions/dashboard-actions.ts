@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/permissions";
 
 interface PersonBirthday {
   id: string;
@@ -24,7 +25,12 @@ interface EventRow {
 }
 
 export async function getDashboardStats() {
+  await requireAuth();
+
   const today = new Date();
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   const todayMonth = today.getMonth();
   const todayDay = today.getDate();
 
@@ -34,14 +40,20 @@ export async function getDashboardStats() {
 
   const [
     totalMembers,
+    newMembersThisMonth,
     activeCells,
     recentVisitors,
     allPeople,
     upcomingEvents,
     latestReport,
-    previousReport,
   ] = await Promise.all([
     prisma.person.count({ where: { personType: "MEMBRO" } }),
+    prisma.person.count({
+      where: {
+        personType: "MEMBRO",
+        createdAt: { gte: startOfMonth },
+      },
+    }),
     prisma.cell.count({ where: { isActive: true } }),
     prisma.person.count({
       where: {
@@ -56,18 +68,13 @@ export async function getDashboardStats() {
     }),
     // Upcoming events
     prisma.event.findMany({
-      where: { date: { gte: today } },
+      where: { date: { gte: startOfToday } },
       orderBy: { date: "asc" },
       take: 3,
     }),
     // Latest report
     prisma.monthlyReport.findFirst({
       orderBy: { referenceMonth: "desc" },
-    }),
-    // Previous report for comparison
-    prisma.monthlyReport.findFirst({
-      orderBy: { referenceMonth: "desc" },
-      skip: 1,
     }),
   ]);
 
@@ -77,11 +84,6 @@ export async function getDashboardStats() {
     const bd = new Date(p.birthDate);
     return bd.getMonth() === todayMonth && bd.getDate() === todayDay;
   });
-
-  // Calculate growth
-  const newMembersThisMonth = latestReport && previousReport
-    ? latestReport.totalMembers - previousReport.totalMembers
-    : 0;
 
   return {
     totalMembers,

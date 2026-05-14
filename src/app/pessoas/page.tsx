@@ -18,7 +18,8 @@ export default async function PessoasPage({
   const params = await searchParams;
   const search = params.search ?? "";
   const tab = params.tab ?? "todos";
-  const page = Number(params.page ?? "1");
+  const rawPage = Number(params.page ?? "1");
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.floor(rawPage)) : 1;
   const status = params.status ?? "";
   const baptized = params.baptized ?? "";
   const cell = params.cell ?? "";

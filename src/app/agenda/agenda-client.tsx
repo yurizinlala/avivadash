@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  CalendarDays, Plus, ChevronLeft, ChevronRight, Clock, MapPin, Users,
+  Plus, ChevronLeft, ChevronRight, Clock, MapPin, Users,
   CalendarCheck, Star, Navigation, Loader2, Trash2, Search, Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -22,8 +22,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 import { toast } from "sonner";
 import { createEvent, updateEvent, deleteEvent } from "@/lib/actions/event-actions";
-import type { EventFormData } from "@/lib/validations/event";
+import { maskCep } from "@/lib/masks";
+import { eventSchema, type EventFormData } from "@/lib/validations/event";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { FieldError, MetricCard, PageHeader } from "@/components/design-system";
 
 const MONTHS_PT = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -34,12 +36,12 @@ const WEEKDAYS_PT = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 const TYPE_DOT: Record<string, string> = {
   culto: "bg-primary",
   reuniao: "bg-gold",
-  congresso: "bg-red-500",
+  congresso: "bg-destructive",
 };
 const TYPE_BG: Record<string, string> = {
   culto: "bg-primary/15 text-primary",
   reuniao: "bg-gold/15 text-gold-muted dark:text-gold",
-  congresso: "bg-red-500/10 text-red-600",
+  congresso: "bg-destructive/10 text-destructive",
 };
 
 interface EventRow {
@@ -76,8 +78,47 @@ interface AgendaClientProps {
   cells?: { id: string; name: string; address: string | null }[];
 }
 
+interface ManualLocationState {
+  cep: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+}
+
+interface EventFormState {
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  type: EventFormData["type"];
+  isRecurrent: boolean;
+}
+
+const EMPTY_MANUAL_LOCATION: ManualLocationState = {
+  cep: "",
+  street: "",
+  number: "",
+  complement: "",
+  neighborhood: "",
+  city: "",
+  state: "",
+};
+
+const EMPTY_EVENT_FORM: EventFormState = {
+  title: "",
+  description: "",
+  date: "",
+  time: "",
+  type: "culto",
+  isRecurrent: false,
+};
+
 export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const today = new Date();
   const [year, setYear] = React.useState(today.getFullYear());
   const [month, setMonth] = React.useState(today.getMonth());
@@ -94,7 +135,25 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
   const [searchLocationQuery, setSearchLocationQuery] = React.useState("");
   const [locationSearchOpen, setLocationSearchOpen] = React.useState(false);
   const [isManualLocation, setIsManualLocation] = React.useState(false);
+  const [manualLocation, setManualLocation] = React.useState<ManualLocationState>(EMPTY_MANUAL_LOCATION);
+  const [fetchingCep, setFetchingCep] = React.useState(false);
+  const [eventForm, setEventForm] = React.useState<EventFormState>(EMPTY_EVENT_FORM);
+  const [eventErrors, setEventErrors] = React.useState<Record<string, string[]>>({});
   const wrapperRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const eventId = searchParams.get("eventId") ?? searchParams.get("highlight");
+    if (!eventId) return;
+
+    const highlightedEvent = initialEvents.find((event) => event.id === eventId);
+    if (highlightedEvent) {
+      setSelectedEvent(highlightedEvent);
+      setSheetOpen(true);
+      setYear(new Date(highlightedEvent.date).getFullYear());
+      setMonth(new Date(highlightedEvent.date).getMonth());
+      setSelDate(formatDateToKey(highlightedEvent.date));
+    }
+  }, [initialEvents, searchParams]);
 
   React.useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -109,14 +168,84 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
   React.useEffect(() => {
     if (sheetOpen) {
       if (selectedEvent) {
+        setEventForm({
+          title: selectedEvent.title,
+          description: selectedEvent.description ?? "",
+          date: formatDateForInput(selectedEvent.date),
+          time: selectedEvent.time ?? "",
+          type: (selectedEvent.type as EventFormData["type"]) ?? "culto",
+          isRecurrent: selectedEvent.isRecurrent,
+        });
         setSearchLocationQuery(selectedEvent.location ?? "");
         setIsManualLocation(false);
+        setManualLocation({ ...EMPTY_MANUAL_LOCATION });
       } else {
+        setEventForm({ ...EMPTY_EVENT_FORM });
         setSearchLocationQuery("");
         setIsManualLocation(false);
+        setManualLocation({ ...EMPTY_MANUAL_LOCATION });
       }
+      setEventErrors({});
     }
   }, [sheetOpen, selectedEvent]);
+
+  const validateEventForm = (data: EventFormState, location = searchLocationQuery) => {
+    const parsed = eventSchema.safeParse({
+      ...data,
+      location,
+    });
+    setEventErrors(parsed.success ? {} : parsed.error.flatten().fieldErrors);
+    return parsed.success;
+  };
+
+  const updateEventField = <K extends keyof EventFormState>(
+    field: K,
+    value: EventFormState[K]
+  ) => {
+    setEventForm((current) => {
+      const next = { ...current, [field]: value };
+      validateEventForm(next);
+      return next;
+    });
+  };
+
+  const updateManualLocation = <K extends keyof ManualLocationState>(
+    field: K,
+    value: ManualLocationState[K]
+  ) => {
+    setManualLocation((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleManualCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const masked = maskCep(e.target.value);
+    setManualLocation((current) => ({ ...current, cep: masked }));
+
+    const cleanCep = masked.replace(/\D/g, "");
+    if (cleanCep.length !== 8) return;
+
+    setFetchingCep(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+      const data = await res.json();
+
+      if (data.erro) {
+        toast.error("CEP não encontrado.");
+        return;
+      }
+
+      setManualLocation((current) => ({
+        ...current,
+        street: data.logradouro || current.street,
+        neighborhood: data.bairro || current.neighborhood,
+        city: data.localidade || current.city,
+        state: data.uf || current.state,
+      }));
+    } catch {
+      toast.error("Não foi possível buscar o CEP.");
+    } finally {
+      setFetchingCep(false);
+    }
+  };
 
   const getFilteredLocations = () => {
     if (!searchLocationQuery) return cells;
@@ -149,30 +278,55 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
     e.preventDefault();
     setSaving(true);
 
-    const fd = new FormData(e.currentTarget);
-    
     let finalLocation = "";
     if (isManualLocation) {
-      const cep = fd.get("cep") as string;
-      const street = fd.get("street") as string;
-      const number = fd.get("number") as string;
-      const neighborhood = fd.get("neighborhood") as string;
-      const city = fd.get("city") as string;
-      const state = fd.get("state") as string;
-      finalLocation = `${street}, ${number} - ${neighborhood}, ${city} - ${state} CEP: ${cep}`.trim();
+      if (
+        !manualLocation.street ||
+        !manualLocation.number ||
+        !manualLocation.neighborhood ||
+        !manualLocation.city ||
+        !manualLocation.state
+      ) {
+        setSaving(false);
+        toast.error("Preencha os campos obrigatórios do endereço manual.");
+        return;
+      }
+
+      const addressLine = [
+        manualLocation.street,
+        manualLocation.number,
+        manualLocation.complement,
+      ].filter(Boolean).join(", ");
+      const cityLine = [
+        manualLocation.neighborhood,
+        manualLocation.city,
+        manualLocation.state,
+      ].filter(Boolean).join(" - ");
+
+      finalLocation = [
+        addressLine,
+        cityLine,
+        manualLocation.cep ? `CEP: ${manualLocation.cep}` : "",
+      ].filter(Boolean).join(" | ");
     } else {
       finalLocation = searchLocationQuery;
     }
 
     const data: EventFormData = {
-      title: fd.get("title") as string,
-      description: fd.get("description") as string,
-      date: fd.get("date") as string,
-      time: fd.get("time") as string,
+      title: eventForm.title,
+      description: eventForm.description,
+      date: eventForm.date,
+      time: eventForm.time,
       location: finalLocation,
-      type: (fd.get("type") as EventFormData["type"]) || "Culto",
-      isRecurrent: fd.get("isRecurrent") === "on",
+      type: eventForm.type,
+      isRecurrent: eventForm.isRecurrent,
     };
+
+    if (!validateEventForm(eventForm, finalLocation)) {
+      setSaving(false);
+      toast.error("Corrija os erros do formulário antes de salvar.");
+      return;
+    }
 
     try {
       const result = selectedEvent
@@ -228,54 +382,46 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-1">
-            Agenda Central
-          </p>
-          <p className="text-[0.65rem] uppercase tracking-widest text-muted-foreground mb-0.5">
-            Cronograma da igreja e cadastro de eventos
-          </p>
-          <h1 className="text-2xl font-heading font-bold text-foreground tracking-tight">
-            Gestão de Ministérios
-          </h1>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* View Mode Toggle */}
-          <div className="flex items-center bg-surface-high rounded-xl p-1">
-            {(["Mês", "Semana", "Dia"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setViewMode(m)}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-medium rounded-lg transition-colors",
-                  viewMode === m
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {m}
-              </button>
-            ))}
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Agenda Central"
+        title="Gestão de Ministérios"
+        description="Organize cultos, reuniões e eventos da igreja em um só lugar."
+        actions={(
+          <div className="flex flex-wrap items-center gap-3">
+            {/* View Mode Toggle */}
+            <div className="flex items-center rounded-xl bg-surface-high p-1">
+              {(["Mês", "Semana", "Dia"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setViewMode(m)} className={cn(
+                    "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                    viewMode === m
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            <Button
+              variant="brand"
+              onClick={() => {
+                setSelectedEvent(null);
+                setSheetOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              Novo Evento
+            </Button>
           </div>
-          <Button
-            onClick={() => {
-              setSelectedEvent(null);
-              setSheetOpen(true);
-            }}
-            className="gradient-primary text-white rounded-xl gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Novo Evento
-          </Button>
-        </div>
-      </div>
+        )}
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6">
         {/* Calendar Card */}
-        <div className="rounded-xl bg-card p-6 shadow-ambient">
+        <div className="app-card p-6">
           {/* Month Nav + Legend */}
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
@@ -301,7 +447,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                 Reunião
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-red-500" />
+                <span className="h-2 w-2 rounded-full bg-destructive" />
                 Congresso
               </span>
             </div>
@@ -311,8 +457,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
           <div className="grid grid-cols-7 gap-1 mb-1">
             {WEEKDAYS_PT.map((d) => (
               <div
-                key={d}
-                className="text-center text-[0.6rem] font-semibold uppercase tracking-wider text-muted-foreground py-2"
+                key={d} className="py-2 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
                 {d}
               </div>
@@ -333,15 +478,13 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
               return (
                 <button
                   key={day}
-                  onClick={() => setSelDate(is ? null : dk)}
-                  className={cn(
+                  onClick={() => setSelDate(is ? null : dk)} className={cn(
                     "h-24 rounded-lg p-1.5 text-left transition-all duration-150 flex flex-col",
                     it ? "bg-primary/8 ring-2 ring-primary" : "hover:bg-surface-low",
                     is && !it && "bg-primary/10 ring-2 ring-primary/50"
                   )}
                 >
-                  <span
-                    className={cn(
+                  <span className={cn(
                       "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
                       it ? "bg-primary text-primary-foreground" : "text-foreground"
                     )}
@@ -351,10 +494,9 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                   <div className="mt-auto space-y-0.5 overflow-hidden">
                     {de.slice(0, 2).map((ev) => (
                       <div
-                        key={ev.id}
-                        className={cn(
-                          "truncate rounded px-1 py-0.5 text-[0.5rem] font-semibold leading-tight cursor-pointer",
-                          TYPE_BG[ev.type ?? "Culto"] ?? "bg-primary/15 text-primary"
+                        key={ev.id} className={cn(
+                          "cursor-pointer truncate rounded px-1 py-0.5 text-xs font-semibold leading-tight",
+                          TYPE_BG[ev.type ?? "culto"] ?? "bg-primary/15 text-primary"
                         )}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -366,7 +508,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                       </div>
                     ))}
                     {de.length > 2 && (
-                      <span className="text-[0.5rem] text-muted-foreground px-1">
+                      <span className="px-1 text-xs text-muted-foreground">
                         +{de.length - 2}
                       </span>
                     )}
@@ -380,12 +522,12 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
         {/* Sidebar */}
         <div className="space-y-5">
           {/* Próximos Eventos */}
-          <div className="rounded-xl bg-card p-5 shadow-ambient">
+          <div className="app-card p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-heading font-bold text-foreground">
                 Próximos Eventos
               </h3>
-              <span className="text-[0.65rem] font-semibold text-primary uppercase tracking-widest">
+              <span className="text-xs font-semibold uppercase tracking-widest text-primary">
                 {upcoming.length}
               </span>
             </div>
@@ -399,21 +541,19 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                   const evDate = new Date(ev.date);
                   return (
                     <div
-                      key={ev.id}
-                      className="space-y-1.5 cursor-pointer"
+                      key={ev.id} className="space-y-1.5 cursor-pointer"
                       onClick={() => {
                         setSelectedEvent(ev);
                         setSheetOpen(true);
                       }}
                     >
                       <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
+                        <span className={cn(
                             "h-2 w-2 rounded-full shrink-0",
-                            TYPE_DOT[ev.type ?? "Culto"] ?? "bg-primary"
+                            TYPE_DOT[ev.type ?? "culto"] ?? "bg-primary"
                           )}
                         />
-                        <span className="text-[0.6rem] uppercase tracking-widest text-muted-foreground font-medium">
+                        <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
                           {evDate
                             .toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
                             .toUpperCase()}
@@ -428,8 +568,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                       </p>
                       {ev.location && ev.type === "congresso" && (
                         <Badge
-                          variant="secondary"
-                          className="rounded-md text-[0.55rem] font-semibold border-0 bg-primary/10 text-primary mt-1 gap-1"
+                          variant="secondary" className="mt-1 gap-1 rounded-md border-0 bg-primary/10 text-xs font-semibold text-primary"
                         >
                           <MapPin className="h-2.5 w-2.5" />
                           {ev.location.toUpperCase()}
@@ -447,7 +586,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
             <div className="h-36 bg-gradient-to-br from-primary to-primary/70 relative">
               <div className="absolute inset-0 bg-black/30" />
               <div className="absolute bottom-0 left-0 right-0 p-4">
-                <p className="text-[0.6rem] uppercase tracking-widest text-white/60 mb-1">
+                <p className="mb-1 text-xs uppercase tracking-widest text-white/60">
                   Localização Sede
                 </p>
                 <p className="text-sm font-heading font-semibold text-white flex items-center gap-1.5">
@@ -461,32 +600,25 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
       </div>
 
       {/* Bottom Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-xl gradient-primary p-5 text-white">
-          <CalendarCheck className="h-5 w-5 text-white/60 mb-2" />
-          <p className="text-2xl font-heading font-bold">{stats.eventsThisMonth}</p>
-          <p className="text-[0.6rem] uppercase tracking-widest text-white/70">
-            Eventos este mês
-          </p>
-        </div>
-        <div className="rounded-xl bg-gold/10 p-5">
-          <Users className="h-5 w-5 text-gold-muted mb-2" />
-          <p className="text-2xl font-heading font-bold text-foreground">
-            {stats.totalEvents}
-          </p>
-          <p className="text-[0.6rem] uppercase tracking-widest text-muted-foreground">
-            Total de Eventos
-          </p>
-        </div>
-        <div className="rounded-xl bg-surface-high p-5">
-          <Star className="h-5 w-5 text-muted-foreground mb-2" />
-          <p className="text-2xl font-heading font-bold text-foreground">
-            {stats.upcomingEvents}
-          </p>
-          <p className="text-[0.6rem] uppercase tracking-widest text-muted-foreground">
-            Eventos Futuros
-          </p>
-        </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <MetricCard
+          label="Eventos este mês"
+          value={stats.eventsThisMonth}
+          icon={CalendarCheck}
+          tone="primary"
+        />
+        <MetricCard
+          label="Total de eventos"
+          value={stats.totalEvents}
+          icon={Users}
+          tone="gold"
+        />
+        <MetricCard
+          label="Eventos futuros"
+          value={stats.upcomingEvents}
+          icon={Star}
+          tone="info"
+        />
       </div>
 
       {/* Sheet for Create/Edit Event */}
@@ -504,9 +636,8 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
               </div>
               {selectedEvent && (
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                  variant="destructive"
+                  size="icon" className="h-8 w-8"
                   onClick={() => requestDelete(selectedEvent.id)}
                   disabled={deleting}
                 >
@@ -531,42 +662,45 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                     Informações Gerais
                   </h3>
                 </div>
-                <div className="space-y-4 bg-surface-high rounded-xl p-4">
+                <div className="space-y-4">
                   <div>
-                    <Label className="text-xs text-muted-foreground">Título *</Label>
+                    <Label className={cn("text-xs text-muted-foreground", eventErrors.title && "text-destructive")}>Título *</Label>
                     <Input
                       name="title"
                       required
                       placeholder="Ex: Culto de Celebração"
-                      defaultValue={selectedEvent?.title}
-                      className="mt-1.5 h-10 rounded-xl bg-card border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      value={eventForm.title}
+                      onChange={(e) => updateEventField("title", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", eventErrors.title && "border border-destructive")}
                     />
+                    <FieldError error={eventErrors.title} />
                   </div>
 
                   <div>
-                    <Label className="text-xs text-muted-foreground">Descrição</Label>
+                    <Label className={cn("text-xs text-muted-foreground", eventErrors.description && "text-destructive")}>Descrição</Label>
                     <textarea
                       name="description"
                       rows={3}
                       placeholder="Detalhes do evento..."
-                      defaultValue={selectedEvent?.description ?? ""}
-                      className="mt-1.5 w-full rounded-xl bg-card border-0 p-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 resize-none"
+                      value={eventForm.description}
+                      onChange={(e) => updateEventField("description", e.target.value)} className={cn("mt-1.5 w-full rounded-xl bg-surface-high border-0 p-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 resize-none", eventErrors.description && "border border-destructive")}
                     />
+                    <FieldError error={eventErrors.description} />
                   </div>
 
                   <div>
                     <Label className="text-xs text-muted-foreground">Tipo</Label>
                     <Select
                       name="type"
-                      defaultValue={selectedEvent?.type ?? "Culto"}
+                      value={eventForm.type}
+                      onValueChange={(value) => updateEventField("type", value as EventFormData["type"])}
                     >
-                      <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-card border-0 focus-visible:ring-0">
+                      <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Culto">Culto</SelectItem>
-                        <SelectItem value="Reunião">Reunião</SelectItem>
-                        <SelectItem value="Congresso">Congresso</SelectItem>
+                        <SelectItem value="culto">Culto</SelectItem>
+                        <SelectItem value="reuniao">Reunião</SelectItem>
+                        <SelectItem value="congresso">Congresso</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -581,39 +715,42 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                     Data e Horário
                   </h3>
                 </div>
-                <div className="space-y-4 bg-surface-high rounded-xl p-4">
+                <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-xs text-muted-foreground">Data *</Label>
+                      <Label className={cn("text-xs text-muted-foreground", eventErrors.date && "text-destructive")}>Data *</Label>
                       <Input
                         name="date"
                         type="date"
                         required
-                        defaultValue={formatDateForInput(selectedEvent?.date ?? null)}
-                        className="mt-1.5 h-10 rounded-xl bg-card border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        value={eventForm.date}
+                        onChange={(e) => updateEventField("date", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", eventErrors.date && "border border-destructive")}
                       />
+                      <FieldError error={eventErrors.date} />
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">Horário</Label>
+                      <Label className={cn("text-xs text-muted-foreground", eventErrors.time && "text-destructive")}>Horário</Label>
                       <Input
                         name="time"
                         type="time"
-                        defaultValue={selectedEvent?.time ?? ""}
-                        className="mt-1.5 h-10 rounded-xl bg-card border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        value={eventForm.time}
+                        onChange={(e) => updateEventField("time", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", eventErrors.time && "border border-destructive")}
                       />
+                      <FieldError error={eventErrors.time} />
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between rounded-xl bg-card p-3 border border-border/50">
+                  <div className="flex items-center justify-between rounded-xl bg-surface-high p-3 border border-border/50">
                     <div>
                       <p className="text-sm font-medium text-foreground">Evento Recorrente?</p>
-                      <p className="text-[0.65rem] text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         Repete semanalmente
                       </p>
                     </div>
                     <Switch
                       name="isRecurrent"
-                      defaultChecked={selectedEvent?.isRecurrent ?? false}
+                      checked={eventForm.isRecurrent}
+                      onCheckedChange={(value) => updateEventField("isRecurrent", value)}
                     />
                   </div>
                 </div>
@@ -627,7 +764,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                     Localização
                   </h3>
                 </div>
-                <div className="space-y-4 bg-surface-high rounded-xl p-4">
+                <div className="space-y-4">
                   {!isManualLocation ? (
                     <div className="relative" ref={wrapperRef}>
                       <Label className="text-xs text-muted-foreground">
@@ -638,11 +775,12 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                           placeholder="Ex: Templo Central ou busque uma célula..."
                           value={searchLocationQuery}
                           onChange={(e) => {
-                            setSearchLocationQuery(e.target.value);
+                            const value = e.target.value;
+                            setSearchLocationQuery(value);
+                            validateEventForm(eventForm, value);
                             setLocationSearchOpen(true);
                           }}
-                          onFocus={() => setLocationSearchOpen(true)}
-                          className="h-10 rounded-xl bg-card border-0 focus-visible:ring-2 focus-visible:ring-primary/20 pl-10"
+                          onFocus={() => setLocationSearchOpen(true)} className="h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 pl-10"
                         />
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       </div>
@@ -659,16 +797,16 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                               <div
                                 onClick={() => {
                                   setSearchLocationQuery("Templo Central");
+                                  validateEventForm(eventForm, "Templo Central");
                                   setLocationSearchOpen(false);
-                                }}
-                                className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
+                                }} className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
                               >
                                 <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
                                   TC
                                 </div>
                                 <div className="flex flex-col">
                                   <span className="text-sm font-medium">Templo Central</span>
-                                  <span className="text-[0.65rem] text-muted-foreground">
+                                  <span className="text-xs text-muted-foreground">
                                     Sede da Igreja
                                   </span>
                                 </div>
@@ -679,16 +817,16 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                                   key={c.id}
                                   onClick={() => {
                                     setSearchLocationQuery(c.name);
+                                    validateEventForm(eventForm, c.name);
                                     setLocationSearchOpen(false);
-                                  }}
-                                  className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
+                                  }} className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
                                 >
                                   <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
                                     CL
                                   </div>
                                   <div className="flex flex-col">
                                     <span className="text-sm font-medium">{c.name}</span>
-                                    <span className="text-[0.65rem] text-muted-foreground truncate w-48">
+                                    <span className="w-48 truncate text-xs text-muted-foreground">
                                       {c.address || "Sem endereço"}
                                     </span>
                                   </div>
@@ -700,8 +838,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                             onClick={() => {
                               setIsManualLocation(true);
                               setLocationSearchOpen(false);
-                            }}
-                            className="bg-surface-lowest p-3 border-t border-border flex items-center justify-between cursor-pointer hover:bg-surface-high transition-colors"
+                            }} className="bg-surface-lowest p-3 border-t border-border flex items-center justify-between cursor-pointer hover:bg-surface-high transition-colors"
                           >
                             <span className="text-sm font-medium text-foreground flex items-center gap-2">
                               <Plus className="h-4 w-4 text-primary" /> Cadastrar endereço manualmente
@@ -718,8 +855,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                           type="button" 
                           variant="ghost" 
                           size="sm" 
-                          onClick={() => setIsManualLocation(false)}
-                          className="h-7 text-xs text-primary"
+                          onClick={() => setIsManualLocation(false)} className="h-7 text-xs text-primary"
                         >
                           Voltar para busca
                         </Button>
@@ -728,31 +864,76 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="col-span-full sm:col-span-1">
                           <Label className="text-xs text-muted-foreground">CEP</Label>
-                          <Input name="cep" className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="00000-000" />
+                          <div className="relative mt-1.5">
+                            <Input
+                              name="cep"
+                              value={manualLocation.cep}
+                              onChange={handleManualCepChange} className="h-10 rounded-xl bg-surface-high border-0 pr-9"
+                              placeholder="00000-000"
+                            />
+                            {fetchingCep && (
+                              <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-primary" />
+                            )}
+                          </div>
                         </div>
                         <div className="col-span-full sm:col-span-2">
                           <Label className="text-xs text-muted-foreground">Rua/Avenida *</Label>
-                          <Input name="street" required={isManualLocation} className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: Av. Principal" />
+                          <Input
+                            name="street"
+                            required={isManualLocation}
+                            value={manualLocation.street}
+                            onChange={(e) => updateManualLocation("street", e.target.value)} className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                            placeholder="Ex: Av. Principal"
+                          />
                         </div>
                         <div className="col-span-1">
                           <Label className="text-xs text-muted-foreground">Número *</Label>
-                          <Input name="number" required={isManualLocation} className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: 1000" />
+                          <Input
+                            name="number"
+                            required={isManualLocation}
+                            value={manualLocation.number}
+                            onChange={(e) => updateManualLocation("number", e.target.value)} className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                            placeholder="Ex: 1000"
+                          />
                         </div>
                         <div className="col-span-1">
                           <Label className="text-xs text-muted-foreground">Complemento</Label>
-                          <Input name="complement" className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: Sala 2" />
+                          <Input
+                            name="complement"
+                            value={manualLocation.complement}
+                            onChange={(e) => updateManualLocation("complement", e.target.value)} className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                            placeholder="Ex: Sala 2"
+                          />
                         </div>
                         <div className="col-span-full sm:col-span-2">
                           <Label className="text-xs text-muted-foreground">Bairro *</Label>
-                          <Input name="neighborhood" required={isManualLocation} className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: Centro" />
+                          <Input
+                            name="neighborhood"
+                            required={isManualLocation}
+                            value={manualLocation.neighborhood}
+                            onChange={(e) => updateManualLocation("neighborhood", e.target.value)} className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                            placeholder="Ex: Centro"
+                          />
                         </div>
                         <div className="col-span-1">
                           <Label className="text-xs text-muted-foreground">Cidade *</Label>
-                          <Input name="city" required={isManualLocation} className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: São Paulo" />
+                          <Input
+                            name="city"
+                            required={isManualLocation}
+                            value={manualLocation.city}
+                            onChange={(e) => updateManualLocation("city", e.target.value)} className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                            placeholder="Ex: São Paulo"
+                          />
                         </div>
                         <div className="col-span-1">
                           <Label className="text-xs text-muted-foreground">Estado *</Label>
-                          <Input name="state" required={isManualLocation} className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: SP" />
+                          <Input
+                            name="state"
+                            required={isManualLocation}
+                            value={manualLocation.state}
+                            onChange={(e) => updateManualLocation("state", e.target.value.toUpperCase().slice(0, 2))} className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 uppercase"
+                            placeholder="Ex: SP"
+                          />
                         </div>
                       </div>
                     </div>
@@ -767,8 +948,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
           <div className="border-t border-border bg-card p-6 shrink-0 z-10 flex gap-3">
             <Button
               type="button"
-              variant="outline"
-              className="flex-1 h-11 rounded-xl border-border hover:bg-surface-high"
+              variant="outline" className="flex-1 h-11 rounded-xl border-border hover:bg-surface-high"
               onClick={() => setSheetOpen(false)}
               disabled={saving}
             >
@@ -777,8 +957,8 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
             <Button
               type="submit"
               form="evento-form"
-              disabled={saving}
-              className="flex-1 h-11 rounded-xl gradient-primary text-white shadow-lg hover:shadow-primary/25 transition-all"
+              variant="brand"
+              disabled={saving} className="h-11 flex-1"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {selectedEvent ? "Salvar Alterações" : "Criar Evento"}

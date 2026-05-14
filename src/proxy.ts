@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "avivadash-secret-key-change-in-production-2024"
-);
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (secret) return secret;
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET must be configured in production.");
+  }
+
+  return "dev-only-avivadash-session-secret";
+}
+
+const JWT_SECRET = new TextEncoder().encode(getJwtSecret());
 const COOKIE_NAME = "avivadash-session";
 
 const PUBLIC_PATHS = ["/login"];
@@ -16,13 +25,17 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow static assets, API, _next
-  if (
+  if (pathname.startsWith("/_next/image")) {
+    const sourceImage = request.nextUrl.searchParams.get("url") ?? "";
+    if (!sourceImage.startsWith("/uploads/")) {
+      return NextResponse.next();
+    }
+  } else if (
+    // Allow static assets, API, _next
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
     pathname.startsWith("/favicon") ||
-    pathname.startsWith("/uploads") ||
-    pathname.includes(".")
+    (!pathname.startsWith("/uploads") && pathname.includes("."))
   ) {
     return NextResponse.next();
   }
@@ -45,5 +58,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|favicon.ico).*)"],
 };

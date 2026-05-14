@@ -5,9 +5,18 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "avivadash-secret-key-change-in-production-2024"
-);
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (secret) return secret;
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET must be configured in production.");
+  }
+
+  return "dev-only-avivadash-session-secret";
+}
+
+const JWT_SECRET = new TextEncoder().encode(getJwtSecret());
 const COOKIE_NAME = "avivadash-session";
 const SESSION_DURATION = 60 * 60 * 24 * 7; // 7 days in seconds
 
@@ -67,7 +76,8 @@ export async function destroySession(): Promise<void> {
 // ─── Auth Actions ───
 export async function login(email: string, password: string) {
   try {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (!user) return { success: false, error: "Credenciais inválidas." };
 
     const valid = await verifyPassword(password, user.passwordHash);
@@ -81,9 +91,9 @@ export async function login(email: string, password: string) {
     });
 
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("LOGIN ERROR:", error);
-    return { success: false, error: `Erro no Servidor: ${error.message || String(error)}` };
+    return { success: false, error: "Erro no servidor. Tente novamente." };
   }
 }
 
@@ -95,5 +105,23 @@ export async function logout() {
 export async function getCurrentUser() {
   const session = await getSession();
   if (!session) return null;
-  return session;
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+    },
+  });
+
+  if (!user) return null;
+
+  return {
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+  };
 }

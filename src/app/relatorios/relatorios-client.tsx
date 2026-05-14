@@ -12,8 +12,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { createReport } from "@/lib/actions/report-actions";
-import type { ReportFormData } from "@/lib/validations/report";
+import { reportSchema, type ReportFormData } from "@/lib/validations/report";
 import { generateReportPDF } from "@/lib/pdf/report-pdf";
+import { FieldError, MetricCard, PageHeader, SectionHeader } from "@/components/design-system";
 
 interface ReportRow {
   id: string;
@@ -34,6 +35,22 @@ interface ReportRow {
 
 const MONTHS_PT = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
+type ReportFormState = Record<keyof ReportFormData, string>;
+
+const EMPTY_REPORT_FORM: ReportFormState = {
+  referenceMonth: "",
+  totalMembers: "0",
+  totalVisitors: "0",
+  totalBaptisms: "0",
+  totalConversions: "0",
+  totalTransfers: "0",
+  totalTithes: "0",
+  totalOfferings: "0",
+  totalOtherIncome: "0",
+  totalExpenses: "0",
+  notes: "",
+};
+
 interface RelatoriosClientProps {
   initialReports: ReportRow[];
 }
@@ -41,6 +58,8 @@ interface RelatoriosClientProps {
 export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
+  const [formData, setFormData] = React.useState<ReportFormState>(EMPTY_REPORT_FORM);
+  const [formErrors, setFormErrors] = React.useState<Record<string, string[]>>({});
 
   // Calculate financial summary from most recent report
   const latest = initialReports[0];
@@ -51,30 +70,50 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
   // Build chart-like data from available reports (last 7)
   const chartReports = [...initialReports].reverse().slice(-7);
 
+  const validateFormData = (data: ReportFormState) => {
+    const parsed = reportSchema.safeParse(data);
+    setFormErrors(parsed.success ? {} : parsed.error.flatten().fieldErrors);
+    return parsed.success;
+  };
+
+  const updateField = (field: keyof ReportFormData, value: string) => {
+    setFormData((current) => {
+      const next = { ...current, [field]: value };
+      validateFormData(next);
+      return next;
+    });
+  };
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
 
-    const fd = new FormData(e.currentTarget);
     const data: ReportFormData = {
-      referenceMonth: fd.get("referenceMonth") as string,
-      totalMembers: Number(fd.get("totalMembers") || 0),
-      totalVisitors: Number(fd.get("totalVisitors") || 0),
-      totalBaptisms: Number(fd.get("totalBaptisms") || 0),
-      totalConversions: Number(fd.get("totalConversions") || 0),
-      totalTransfers: Number(fd.get("totalTransfers") || 0),
-      totalTithes: Number(fd.get("totalTithes") || 0),
-      totalOfferings: Number(fd.get("totalOfferings") || 0),
-      totalOtherIncome: Number(fd.get("totalOtherIncome") || 0),
-      totalExpenses: Number(fd.get("totalExpenses") || 0),
-      notes: fd.get("notes") as string,
+      referenceMonth: formData.referenceMonth,
+      totalMembers: Number(formData.totalMembers || 0),
+      totalVisitors: Number(formData.totalVisitors || 0),
+      totalBaptisms: Number(formData.totalBaptisms || 0),
+      totalConversions: Number(formData.totalConversions || 0),
+      totalTransfers: Number(formData.totalTransfers || 0),
+      totalTithes: Number(formData.totalTithes || 0),
+      totalOfferings: Number(formData.totalOfferings || 0),
+      totalOtherIncome: Number(formData.totalOtherIncome || 0),
+      totalExpenses: Number(formData.totalExpenses || 0),
+      notes: formData.notes,
     };
+
+    if (!validateFormData(formData)) {
+      setSaving(false);
+      toast.error("Corrija os erros do formulário antes de salvar.");
+      return;
+    }
 
     try {
       const result = await createReport(data);
       if (result.success) {
         toast.success("Relatório salvo com sucesso!");
-        e.currentTarget.reset();
+        setFormData({ ...EMPTY_REPORT_FORM });
+        setFormErrors({});
         router.refresh();
       } else {
         toast.error(
@@ -89,50 +128,42 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-1">
-            Relatórios e Financeiro
-          </p>
-          <h1 className="text-2xl font-heading font-bold text-foreground tracking-tight">
-            Gestão Regional
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Consolidação de dados mensais, atas e exportação financeira.
-          </p>
-        </div>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Relatórios e Financeiro"
+        title="Gestão Regional"
+        description="Consolidação de dados mensais, atas e exportação financeira."
+      />
 
       {/* Top Row — Balance card + Impact Report CTA */}
       <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-5">
         {/* Balance Card */}
-        <div className="rounded-xl bg-card p-6 shadow-ambient">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">
-            Saldo Mensal {latest ? `(${new Date(latest.referenceMonth).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })})` : ""}
-          </p>
-          <div className="flex items-baseline gap-2">
-            <span className="text-sm font-heading font-bold text-primary">R$</span>
-            <span className="text-3xl font-heading font-bold text-foreground">
+        <MetricCard
+          label={`Saldo mensal ${latest ? `(${new Date(latest.referenceMonth).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })})` : ""}`}
+          value={
+            <span className="inline-flex items-baseline gap-2">
+              <span className="text-sm text-primary">R$</span>
               {currentBalance.toLocaleString("pt-BR", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
             </span>
-          </div>
-          {latest && (
-            <div className="flex items-center gap-1.5 mt-2">
-              <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+          }
+          icon={TrendingUp}
+          tone="success"
+          helper={
+            latest ? (
+              <span className="font-medium text-success">
                 {latest.totalConversions} conversões neste mês
               </span>
-            </div>
-          )}
-        </div>
+            ) : (
+              "Nenhum relatório registrado"
+            )
+          }
+        />
 
         {/* Relatório de Impacto */}
-        <div className="rounded-xl gradient-primary p-6 text-white flex items-center justify-between">
+        <div className="app-card gradient-primary flex items-center justify-between gap-4 p-6 text-white">
           <div>
             <h3 className="text-base font-heading font-bold text-white">
               Relatório de Impacto Consolidado
@@ -142,8 +173,7 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
             </p>
           </div>
           <Button
-            variant="outline"
-            className="border-white/30 text-white hover:bg-white/10 rounded-xl gap-2 shrink-0"
+            variant="outline" className="shrink-0 gap-2 border-white bg-white text-primary shadow-sm hover:bg-white/90 hover:text-primary"
             onClick={() => {
               if (latest) {
                 generateReportPDF(latest);
@@ -162,25 +192,32 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
       {/* Middle Row — Insert Data Form (left) + Report History (right) */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-5">
         {/* Inserir Dados Mensais */}
-        <div className="rounded-xl bg-card p-6 shadow-ambient">
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-1 h-5 rounded-full bg-primary" />
-            <h2 className="text-base font-heading font-bold text-foreground">
-              Inserir Dados Mensais
-            </h2>
-          </div>
+        <div className="app-card p-6">
+          <SectionHeader
+            icon={FileText}
+            title="Inserir dados mensais"
+            description="Preencha os indicadores do mês para gerar relatórios consistentes." className="mb-5"
+          />
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form
+            onSubmit={handleSubmit}
+            onReset={() => {
+              setFormData({ ...EMPTY_REPORT_FORM });
+              setFormErrors({});
+            }} className="space-y-4"
+          >
             <div>
-              <Label className="text-xs text-muted-foreground">
+              <Label className={cn("text-xs text-muted-foreground", formErrors.referenceMonth && "text-destructive")}>
                 Mês de Referência *
               </Label>
               <Input
                 name="referenceMonth"
                 required
                 type="month"
-                className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                value={formData.referenceMonth}
+                onChange={(e) => updateField("referenceMonth", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.referenceMonth && "border border-destructive")}
               />
+              <FieldError error={formErrors.referenceMonth} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -192,9 +229,10 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                   name="totalMembers"
                   type="number"
                   min="0"
-                  defaultValue="0"
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                  value={formData.totalMembers}
+                  onChange={(e) => updateField("totalMembers", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalMembers && "border border-destructive")}
                 />
+                <FieldError error={formErrors.totalMembers} />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">
@@ -204,9 +242,10 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                   name="totalConversions"
                   type="number"
                   min="0"
-                  defaultValue="0"
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                  value={formData.totalConversions}
+                  onChange={(e) => updateField("totalConversions", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalConversions && "border border-destructive")}
                 />
+                <FieldError error={formErrors.totalConversions} />
               </div>
             </div>
 
@@ -219,9 +258,10 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                   name="totalVisitors"
                   type="number"
                   min="0"
-                  defaultValue="0"
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                  value={formData.totalVisitors}
+                  onChange={(e) => updateField("totalVisitors", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalVisitors && "border border-destructive")}
                 />
+                <FieldError error={formErrors.totalVisitors} />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">
@@ -231,9 +271,10 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                   name="totalBaptisms"
                   type="number"
                   min="0"
-                  defaultValue="0"
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                  value={formData.totalBaptisms}
+                  onChange={(e) => updateField("totalBaptisms", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalBaptisms && "border border-destructive")}
                 />
+                <FieldError error={formErrors.totalBaptisms} />
               </div>
             </div>
 
@@ -247,9 +288,10 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                   type="number"
                   step="0.01"
                   min="0"
-                  defaultValue="0"
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                  value={formData.totalTithes}
+                  onChange={(e) => updateField("totalTithes", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalTithes && "border border-destructive")}
                 />
+                <FieldError error={formErrors.totalTithes} />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">
@@ -260,9 +302,10 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                   type="number"
                   step="0.01"
                   min="0"
-                  defaultValue="0"
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                  value={formData.totalOfferings}
+                  onChange={(e) => updateField("totalOfferings", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalOfferings && "border border-destructive")}
                 />
+                <FieldError error={formErrors.totalOfferings} />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">
@@ -273,15 +316,16 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                   type="number"
                   step="0.01"
                   min="0"
-                  defaultValue="0"
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                  value={formData.totalExpenses}
+                  onChange={(e) => updateField("totalExpenses", e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalExpenses && "border border-destructive")}
                 />
+                <FieldError error={formErrors.totalExpenses} />
               </div>
             </div>
 
             {/* Hidden fields */}
-            <input type="hidden" name="totalTransfers" value="0" />
-            <input type="hidden" name="totalOtherIncome" value="0" />
+            <input type="hidden" name="totalTransfers" value={formData.totalTransfers} />
+            <input type="hidden" name="totalOtherIncome" value={formData.totalOtherIncome} />
 
             <div>
               <Label className="text-xs text-muted-foreground">Observações</Label>
@@ -289,22 +333,23 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                 name="notes"
                 rows={2}
                 placeholder="Anotações gerais..."
-                className="mt-1.5 w-full rounded-xl bg-surface-high border-0 p-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 resize-none"
+                value={formData.notes}
+                onChange={(e) => updateField("notes", e.target.value)} className={cn("mt-1.5 w-full rounded-xl bg-surface-high border-0 p-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 resize-none", formErrors.notes && "border border-destructive")}
               />
+              <FieldError error={formErrors.notes} />
             </div>
 
             <div className="flex gap-3 pt-2">
               <Button
                 type="reset"
-                variant="outline"
-                className="flex-1 h-10 rounded-xl border-border"
+                variant="outline" className="flex-1 h-10 rounded-xl border-border"
               >
                 Limpar Campos
               </Button>
               <Button
                 type="submit"
-                disabled={saving}
-                className="flex-1 h-10 rounded-xl gradient-primary text-white"
+                variant="brand"
+                disabled={saving} className="h-10 flex-1"
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                 Salvar Registro
@@ -316,13 +361,11 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
         {/* Right Column — Report History + Sync Status */}
         <div className="space-y-5">
           {/* Histórico de Relatórios */}
-          <div className="rounded-xl bg-card p-5 shadow-ambient">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-heading font-bold text-foreground">
-                Histórico de Relatórios
-              </h3>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </div>
+          <div className="app-card p-5">
+            <SectionHeader
+              icon={Clock}
+              title="Histórico de relatórios" className="mb-4"
+            />
             <div className="space-y-3">
               {initialReports.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
@@ -334,8 +377,7 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                   const balance = totalIncome - report.totalExpenses;
                   return (
                     <div
-                      key={report.id}
-                      className="flex items-center gap-3 rounded-lg bg-surface-low p-3 group hover:bg-surface-high transition-colors cursor-pointer"
+                      key={report.id} className="item-row group flex cursor-pointer items-center gap-3"
                     onClick={() => {
                       generateReportPDF(report);
                       toast.success("PDF gerado!");
@@ -348,21 +390,19 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                         <p className="text-sm font-medium text-foreground truncate">
                           Relatório — {new Date(report.referenceMonth).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
                         </p>
-                        <p className="text-[0.65rem] text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                           Saldo: R$ {balance.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                           {" • "}{report.totalConversions} conversões
                         </p>
                       </div>
-                      <div
-                        className={cn(
+                      <div className={cn(
                           "flex h-6 w-6 items-center justify-center rounded-full shrink-0",
-                          balance >= 0 ? "bg-emerald-500/10" : "bg-red-500/10"
+                          balance >= 0 ? "bg-success/10" : "bg-destructive/10"
                         )}
                       >
-                        <CheckCircle2
-                          className={cn(
+                        <CheckCircle2 className={cn(
                             "h-3.5 w-3.5",
-                            balance >= 0 ? "text-emerald-500" : "text-red-500"
+                            balance >= 0 ? "text-success" : "text-destructive"
                           )}
                         />
                       </div>
@@ -374,8 +414,8 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
           </div>
 
           {/* Sync Status */}
-          <div className="rounded-xl bg-gold/10 p-5 border border-gold/20">
-            <Badge className="bg-gold/90 text-primary text-[0.55rem] font-semibold uppercase rounded-md border-0 mb-3">
+          <div className="app-card border-gold/20 bg-gold/10 p-5">
+            <Badge className="mb-3 rounded-md border-0 bg-gold/90 text-xs font-semibold uppercase text-primary">
               Sincronizado com Sede Nacional
             </Badge>
             <div className="flex items-start gap-2">
@@ -384,7 +424,7 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                 <p className="text-xs font-semibold text-foreground">
                   Lembrete Fiscal
                 </p>
-                <p className="text-[0.65rem] text-muted-foreground leading-relaxed mt-0.5">
+                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                   Todas as atas devem ser impressas e assinadas fisicamente pelo
                   Pastor Regional e Secretário antes do envio digital definitivo
                   à sede nacional.
@@ -396,10 +436,11 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
       </div>
 
       {/* Bottom: Engagement History Chart */}
-      <div className="rounded-xl bg-card p-6 shadow-ambient">
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-4">
-          Histórico de Engajamento
-        </h2>
+      <div className="app-card p-6">
+        <SectionHeader
+          icon={TrendingUp}
+          title="Histórico de engajamento" className="mb-4"
+        />
         <div className="flex items-end gap-3 h-44">
           {chartReports.length === 0 ? (
             <p className="text-sm text-muted-foreground m-auto">
@@ -417,14 +458,12 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
 
               return (
                 <div
-                  key={report.id}
-                  className="flex-1 flex flex-col items-center gap-1.5"
+                  key={report.id} className="flex-1 flex flex-col items-center gap-1.5"
                 >
-                  <div
-                    className="w-full rounded-t-lg bg-primary transition-all"
+                  <div className="w-full rounded-t-lg bg-primary transition-all"
                     style={{ height: `${Math.max(pct, 5)}%` }}
                   />
-                  <span className="text-[0.6rem] uppercase tracking-wider text-muted-foreground font-medium">
+                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     {monthLabel}
                   </span>
                 </div>

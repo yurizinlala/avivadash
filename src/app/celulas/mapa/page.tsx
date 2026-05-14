@@ -4,8 +4,12 @@ import { MapPin } from "lucide-react";
 import Link from "next/link";
 import "leaflet/dist/leaflet.css";
 import { MapPageClient } from "./map-client";
+import { requireAuth } from "@/lib/permissions";
+import { PageHeader } from "@/components/design-system";
 
 export default async function CellMapPage() {
+  await requireAuth();
+
   // Fetch cells WITH coordinates (for the map)
   const geolocatedCells = await prisma.cell.findMany({
     where: {
@@ -51,28 +55,20 @@ export default async function CellMapPage() {
     }));
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-1">
-            Visualização Geográfica
-          </p>
-          <h1 className="text-2xl font-heading font-bold text-foreground tracking-tight">
-            Mapa de Células
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {mapCells.length} célula(s) geolocalizadas
-          </p>
-        </div>
-        <Link
-          href="/celulas"
-          className="inline-flex items-center gap-2 rounded-xl bg-surface-high px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-lowest transition-colors"
-        >
-          <MapPin className="h-4 w-4" />
-          Voltar para Lista
-        </Link>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Visualização Geográfica"
+        title="Mapa de Células"
+        description={`${mapCells.length} célula(s) geolocalizadas e ${pendingGeocodeCount} endereço(s) pendentes.`}
+        actions={(
+          <Link
+            href="/celulas" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface-high"
+          >
+            <MapPin className="h-4 w-4" />
+            Voltar para Lista
+          </Link>
+        )}
+      />
 
       {/* Map Client Wrapper */}
       <MapPageClient cells={mapCells} pendingGeocode={pendingGeocodeCount} />
