@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { cellSchema, type CellFormData } from "@/lib/validations/cell";
 import { revalidatePath } from "next/cache";
-import { geocodeAddress } from "@/lib/geocoding";
+import { geocodeCellAddress, type CellAddressInput } from "@/lib/geocoding";
 import { deleteFile } from "@/lib/storage";
 import {
   getPermissionErrorMessage,
@@ -11,6 +11,21 @@ import {
   requireRole,
   WRITE_ROLES,
 } from "@/lib/permissions";
+
+function getCellAddressInput(d: Pick<CellFormData, "street" | "number" | "neighborhood" | "city" | "state" | "cep">): CellAddressInput {
+  return {
+    street: d.street || null,
+    number: d.number || null,
+    neighborhood: d.neighborhood || null,
+    city: d.city || null,
+    state: d.state || null,
+    cep: d.cep || null,
+  };
+}
+
+function hasGeocodableAddress(address: CellAddressInput) {
+  return Boolean(address.street && address.city && address.state);
+}
 
 export async function getCells(search?: string) {
   await requireAuth();
@@ -87,12 +102,13 @@ export async function createCell(formData: CellFormData) {
 
     const d = result.data;
 
-    // Geocode address if provided
+    // Geocode address if provided. The structured search gives Nominatim more
+    // context than a single free-form string, especially for CEP and number.
     let latitude: number | undefined;
     let longitude: number | undefined;
-    const fullAddress = [d.street, d.number, d.neighborhood, d.city, d.state].filter(Boolean).join(", ");
-    if (fullAddress && fullAddress.length > 5) {
-      const geo = await geocodeAddress(fullAddress);
+    const addressInput = getCellAddressInput(d);
+    if (hasGeocodableAddress(addressInput)) {
+      const geo = await geocodeCellAddress(addressInput);
       if (geo) {
         latitude = geo.latitude;
         longitude = geo.longitude;
@@ -136,6 +152,7 @@ export async function createCell(formData: CellFormData) {
       },
     });
     revalidatePath("/celulas");
+    revalidatePath("/celulas/mapa");
     revalidatePath("/");
     return { success: true };
   } catch (e) {
@@ -158,16 +175,43 @@ export async function updateCell(id: string, formData: CellFormData) {
 
     const d = result.data;
 
-    // Geocode address if changed
-    let latitude: number | undefined;
-    let longitude: number | undefined;
-    const fullAddress = [d.street, d.number, d.neighborhood, d.city, d.state].filter(Boolean).join(", ");
-    if (fullAddress && fullAddress.length > 5) {
-      const geo = await geocodeAddress(fullAddress);
+    const currentCell = await prisma.cell.findUnique({
+      where: { id },
+      select: {
+        cep: true,
+        street: true,
+        number: true,
+        neighborhood: true,
+        city: true,
+        state: true,
+      },
+    });
+
+    const addressInput = getCellAddressInput(d);
+    const addressChanged = Boolean(
+      currentCell &&
+        (currentCell.cep !== (d.cep || null) ||
+          currentCell.street !== (d.street || null) ||
+          currentCell.number !== (d.number || null) ||
+          currentCell.neighborhood !== (d.neighborhood || null) ||
+          currentCell.city !== (d.city || null) ||
+          currentCell.state !== (d.state || null))
+    );
+
+    let latitude: number | null | undefined;
+    let longitude: number | null | undefined;
+    if (addressChanged && hasGeocodableAddress(addressInput)) {
+      const geo = await geocodeCellAddress(addressInput);
       if (geo) {
         latitude = geo.latitude;
         longitude = geo.longitude;
+      } else {
+        latitude = null;
+        longitude = null;
       }
+    } else if (addressChanged) {
+      latitude = null;
+      longitude = null;
     }
 
     let foundedAtDate: Date | null = null;
@@ -208,6 +252,7 @@ export async function updateCell(id: string, formData: CellFormData) {
       },
     });
     revalidatePath("/celulas");
+    revalidatePath("/celulas/mapa");
     revalidatePath("/");
     return { success: true };
   } catch (e) {
@@ -240,6 +285,7 @@ export async function deleteCell(id: string) {
     }
 
     revalidatePath("/celulas");
+    revalidatePath("/celulas/mapa");
     revalidatePath("/");
     return { success: true };
   } catch (e) {

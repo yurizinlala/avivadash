@@ -43,7 +43,7 @@ export default async function CellMapPage() {
       id: c.id,
       name: c.name,
       leaderName: c.leaderName,
-      address: [c.street, c.number, c.neighborhood, c.city, c.state]
+      address: [c.street, c.number, c.neighborhood, c.city, c.state, c.cep]
         .filter(Boolean)
         .join(", ") || null,
       dayOfWeek: c.dayOfWeek,
