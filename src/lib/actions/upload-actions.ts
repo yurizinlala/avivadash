@@ -70,7 +70,7 @@ export async function uploadPersonPhoto(personId: string, formData: FormData) {
       return { success: false, error: "Pessoa não encontrada." };
     }
 
-    const photoUrl = await saveFile(image.buffer, image.file.name);
+    const photoUrl = await saveFile(image.buffer, image.file.name, image.file.type);
 
     try {
       await prisma.person.update({
@@ -149,7 +149,7 @@ export async function uploadCellCover(cellId: string, formData: FormData) {
       return { success: false, error: "Célula não encontrada." };
     }
 
-    const coverUrl = await saveFile(image.buffer, image.file.name);
+    const coverUrl = await saveFile(image.buffer, image.file.name, image.file.type);
 
     try {
       await prisma.cell.update({

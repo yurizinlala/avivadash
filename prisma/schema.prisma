@@ -25,6 +25,17 @@ model User {
   @@map("users")
 }
 
+model StoredFile {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  contentType String
+  data        Bytes
+  size        Int
+  createdAt   DateTime @default(now())
+
+  @@map("stored_files")
+}
+
 // ============================================
 // IEAB GESTAO - Data Models
 // ============================================
