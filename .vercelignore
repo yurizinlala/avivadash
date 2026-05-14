@@ -1,0 +1,10 @@
+.env
+.env.*
+.next
+node_modules
+public/uploads
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
