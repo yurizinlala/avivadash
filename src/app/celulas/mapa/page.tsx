@@ -1,12 +1,13 @@
 export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/prisma";
-import { CellMap } from "@/components/cell-map";
 import { MapPin } from "lucide-react";
 import Link from "next/link";
 import "leaflet/dist/leaflet.css";
+import { MapPageClient } from "./map-client";
 
 export default async function CellMapPage() {
-  const cells = await prisma.cell.findMany({
+  // Fetch cells WITH coordinates (for the map)
+  const geolocatedCells = await prisma.cell.findMany({
     where: {
       isActive: true,
       latitude: { not: null },
@@ -17,18 +18,36 @@ export default async function CellMapPage() {
     },
   });
 
-  const mapCells = cells
+  // Count cells that have address but no coordinates (pending geocode)
+  const pendingGeocodeCount = await prisma.cell.count({
+    where: {
+      isActive: true,
+      OR: [{ latitude: null }, { longitude: null }],
+      NOT: {
+        AND: [
+          { street: null },
+          { city: null },
+          { neighborhood: null },
+        ],
+      },
+    },
+  });
+
+  const mapCells = geolocatedCells
     .filter((c) => c.latitude !== null && c.longitude !== null)
     .map((c) => ({
       id: c.id,
       name: c.name,
       leaderName: c.leaderName,
-      address: c.address,
+      address: [c.street, c.number, c.neighborhood, c.city, c.state]
+        .filter(Boolean)
+        .join(", ") || null,
       dayOfWeek: c.dayOfWeek,
       time: c.time,
       latitude: c.latitude!,
       longitude: c.longitude!,
       memberCount: c._count.members,
+      coverUrl: c.coverUrl,
     }));
 
   return (
@@ -55,8 +74,8 @@ export default async function CellMapPage() {
         </Link>
       </div>
 
-      {/* Map */}
-      <CellMap cells={mapCells} />
+      {/* Map Client Wrapper */}
+      <MapPageClient cells={mapCells} pendingGeocode={pendingGeocodeCount} />
     </div>
   );
 }

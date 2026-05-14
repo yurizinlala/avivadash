@@ -81,6 +81,7 @@ export async function getPersonById(id: string) {
   });
 }
 
+
 export async function createPerson(formData: PersonFormData) {
   const result = personSchema.safeParse(formData);
   if (!result.success) {
@@ -96,15 +97,15 @@ export async function createPerson(formData: PersonFormData) {
         cpf: data.cpf || null,
         email: data.email || null,
         phone: data.phone || null,
-        birthDate: data.birthDate ? new Date(data.birthDate) : null,
+        birthDate: data.birthDate ? new Date(`${data.birthDate}T12:00:00Z`) : null,
         maritalStatus: data.maritalStatus || null,
-        weddingDate: data.weddingDate ? new Date(data.weddingDate) : null,
+        weddingDate: data.weddingDate ? new Date(`${data.weddingDate}T12:00:00Z`) : null,
         profession: data.profession || null,
         personType: data.personType,
         memberStatus: data.memberStatus,
         isBaptized: data.isBaptized,
-        baptismDate: data.baptismDate ? new Date(data.baptismDate) : null,
-        conversionDate: data.conversionDate ? new Date(data.conversionDate) : null,
+        baptismDate: data.baptismDate ? new Date(`${data.baptismDate}T12:00:00Z`) : null,
+        conversionDate: data.conversionDate ? new Date(`${data.conversionDate}T12:00:00Z`) : null,
         cep: data.cep || null,
         street: data.street || null,
         number: data.number || null,
@@ -143,15 +144,15 @@ export async function updatePerson(id: string, formData: PersonFormData) {
         cpf: data.cpf || null,
         email: data.email || null,
         phone: data.phone || null,
-        birthDate: data.birthDate ? new Date(data.birthDate) : null,
+        birthDate: data.birthDate ? new Date(`${data.birthDate}T12:00:00Z`) : null,
         maritalStatus: data.maritalStatus || null,
-        weddingDate: data.weddingDate ? new Date(data.weddingDate) : null,
+        weddingDate: data.weddingDate ? new Date(`${data.weddingDate}T12:00:00Z`) : null,
         profession: data.profession || null,
         personType: data.personType,
         memberStatus: data.memberStatus,
         isBaptized: data.isBaptized,
-        baptismDate: data.baptismDate ? new Date(data.baptismDate) : null,
-        conversionDate: data.conversionDate ? new Date(data.conversionDate) : null,
+        baptismDate: data.baptismDate ? new Date(`${data.baptismDate}T12:00:00Z`) : null,
+        conversionDate: data.conversionDate ? new Date(`${data.conversionDate}T12:00:00Z`) : null,
         cep: data.cep || null,
         street: data.street || null,
         number: data.number || null,
@@ -194,4 +195,19 @@ export async function getPersonStats() {
     prisma.person.count({ where: { personType: "CONGREGADO" } }),
   ]);
   return { total, membros, visitantes, congregados };
+}
+
+export async function getPeopleSimple() {
+  return prisma.person.findMany({
+    where: { memberStatus: { not: "FALECIDO" } },
+    select: { 
+      id: true, 
+      fullName: true, 
+      phone: true,
+      cpf: true,
+      birthDate: true,
+      personType: true
+    },
+    orderBy: { fullName: "asc" },
+  });
 }

@@ -4,7 +4,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays, Plus, ChevronLeft, ChevronRight, Clock, MapPin, Users,
-  CalendarCheck, Star, Navigation, Loader2, Trash2,
+  CalendarCheck, Star, Navigation, Loader2, Trash2, Search, Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,16 +19,17 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { toast } from "sonner";
 import { createEvent, updateEvent, deleteEvent } from "@/lib/actions/event-actions";
 import type { EventFormData } from "@/lib/validations/event";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 
 const MONTHS_PT = [
-  "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ];
-const WEEKDAYS_PT = ["DOM","SEG","TER","QUA","QUI","SEX","SÁB"];
+const WEEKDAYS_PT = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 
 const TYPE_DOT: Record<string, string> = {
   culto: "bg-primary",
@@ -72,9 +73,10 @@ interface AgendaClientProps {
     eventsThisMonth: number;
     upcomingEvents: number;
   };
+  cells?: { id: string; name: string; address: string | null }[];
 }
 
-export function AgendaClient({ initialEvents, stats }: AgendaClientProps) {
+export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientProps) {
   const router = useRouter();
   const today = new Date();
   const [year, setYear] = React.useState(today.getFullYear());
@@ -87,6 +89,40 @@ export function AgendaClient({ initialEvents, stats }: AgendaClientProps) {
   const [deleting, setDeleting] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
+
+  // Form states for Location Autocomplete
+  const [searchLocationQuery, setSearchLocationQuery] = React.useState("");
+  const [locationSearchOpen, setLocationSearchOpen] = React.useState(false);
+  const [isManualLocation, setIsManualLocation] = React.useState(false);
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setLocationSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  React.useEffect(() => {
+    if (sheetOpen) {
+      if (selectedEvent) {
+        setSearchLocationQuery(selectedEvent.location ?? "");
+        setIsManualLocation(false);
+      } else {
+        setSearchLocationQuery("");
+        setIsManualLocation(false);
+      }
+    }
+  }, [sheetOpen, selectedEvent]);
+
+  const getFilteredLocations = () => {
+    if (!searchLocationQuery) return cells;
+    const lower = searchLocationQuery.toLowerCase();
+    return cells.filter((c) => c.name.toLowerCase().includes(lower));
+  };
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay = new Date(year, month, 1).getDay();
@@ -114,13 +150,27 @@ export function AgendaClient({ initialEvents, stats }: AgendaClientProps) {
     setSaving(true);
 
     const fd = new FormData(e.currentTarget);
+    
+    let finalLocation = "";
+    if (isManualLocation) {
+      const cep = fd.get("cep") as string;
+      const street = fd.get("street") as string;
+      const number = fd.get("number") as string;
+      const neighborhood = fd.get("neighborhood") as string;
+      const city = fd.get("city") as string;
+      const state = fd.get("state") as string;
+      finalLocation = `${street}, ${number} - ${neighborhood}, ${city} - ${state} CEP: ${cep}`.trim();
+    } else {
+      finalLocation = searchLocationQuery;
+    }
+
     const data: EventFormData = {
       title: fd.get("title") as string,
       description: fd.get("description") as string,
       date: fd.get("date") as string,
       time: fd.get("time") as string,
-      location: fd.get("location") as string,
-      type: (fd.get("type") as EventFormData["type"]) || "culto",
+      location: finalLocation,
+      type: (fd.get("type") as EventFormData["type"]) || "Culto",
       isRecurrent: fd.get("isRecurrent") === "on",
     };
 
@@ -186,7 +236,7 @@ export function AgendaClient({ initialEvents, stats }: AgendaClientProps) {
             Agenda Central
           </p>
           <p className="text-[0.65rem] uppercase tracking-widest text-muted-foreground mb-0.5">
-            Cronograma Eclesiástico
+            Cronograma da igreja e cadastro de eventos
           </p>
           <h1 className="text-2xl font-heading font-bold text-foreground tracking-tight">
             Gestão de Ministérios
@@ -304,7 +354,7 @@ export function AgendaClient({ initialEvents, stats }: AgendaClientProps) {
                         key={ev.id}
                         className={cn(
                           "truncate rounded px-1 py-0.5 text-[0.5rem] font-semibold leading-tight cursor-pointer",
-                          TYPE_BG[ev.type ?? "culto"] ?? "bg-primary/15 text-primary"
+                          TYPE_BG[ev.type ?? "Culto"] ?? "bg-primary/15 text-primary"
                         )}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -360,7 +410,7 @@ export function AgendaClient({ initialEvents, stats }: AgendaClientProps) {
                         <span
                           className={cn(
                             "h-2 w-2 rounded-full shrink-0",
-                            TYPE_DOT[ev.type ?? "culto"] ?? "bg-primary"
+                            TYPE_DOT[ev.type ?? "Culto"] ?? "bg-primary"
                           )}
                         />
                         <span className="text-[0.6rem] uppercase tracking-widest text-muted-foreground font-medium">
@@ -441,15 +491,15 @@ export function AgendaClient({ initialEvents, stats }: AgendaClientProps) {
 
       {/* Sheet for Create/Edit Event */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-md p-0 border-0 bg-card">
-          <SheetHeader className="px-6 pt-6 pb-4 border-b border-border">
+        <SheetContent className="w-full sm:max-w-md p-0 border-0 bg-card flex flex-col h-full">
+          <SheetHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <div className="flex items-center justify-between">
               <div>
                 <SheetTitle className="text-lg font-heading font-bold">
-                  {selectedEvent ? selectedEvent.title : "Novo Evento"}
+                  {selectedEvent ? selectedEvent.title : "Novo Cadastro"}
                 </SheetTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {selectedEvent ? "Editar evento" : "Criar novo evento"}
+                  {selectedEvent ? "Editar informações" : "Preencha os dados do novo cadastro"}
                 </p>
               </div>
               {selectedEvent && (
@@ -470,113 +520,270 @@ export function AgendaClient({ initialEvents, stats }: AgendaClientProps) {
             </div>
           </SheetHeader>
 
-          <ScrollArea className="h-[calc(100vh-8rem)]">
-            <form onSubmit={handleSubmit} className="px-6 py-6 space-y-5">
-              <div>
-                <Label className="text-xs text-muted-foreground">Título *</Label>
-                <Input
-                  name="title"
-                  required
-                  placeholder="Ex: Culto de Celebração"
-                  defaultValue={selectedEvent?.title}
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs text-muted-foreground">Descrição</Label>
-                <textarea
-                  name="description"
-                  rows={3}
-                  placeholder="Detalhes do evento..."
-                  defaultValue={selectedEvent?.description ?? ""}
-                  className="mt-1.5 w-full rounded-xl bg-surface-high border-0 p-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs text-muted-foreground">Data *</Label>
-                  <Input
-                    name="date"
-                    type="date"
-                    required
-                    defaultValue={formatDateForInput(selectedEvent?.date ?? null)}
-                    className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-                  />
+          <div className="flex-1 overflow-y-auto">
+            <form id="evento-form" onSubmit={handleSubmit} className="px-6 py-6 space-y-8">
+              
+              {/* SEÇÃO 1: GERAL */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-primary">
+                  <Info className="h-4 w-4" />
+                  <h3 className="text-xs font-semibold uppercase tracking-widest">
+                    Informações Gerais
+                  </h3>
                 </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Horário</Label>
-                  <Input
-                    name="time"
-                    placeholder="Ex: 19:30"
-                    defaultValue={selectedEvent?.time ?? ""}
-                    className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-                  />
+                <div className="space-y-4 bg-surface-high rounded-xl p-4">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Título *</Label>
+                    <Input
+                      name="title"
+                      required
+                      placeholder="Ex: Culto de Celebração"
+                      defaultValue={selectedEvent?.title}
+                      className="mt-1.5 h-10 rounded-xl bg-card border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Descrição</Label>
+                    <textarea
+                      name="description"
+                      rows={3}
+                      placeholder="Detalhes do evento..."
+                      defaultValue={selectedEvent?.description ?? ""}
+                      className="mt-1.5 w-full rounded-xl bg-card border-0 p-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Tipo</Label>
+                    <Select
+                      name="type"
+                      defaultValue={selectedEvent?.type ?? "Culto"}
+                    >
+                      <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-card border-0 focus-visible:ring-0">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Culto">Culto</SelectItem>
+                        <SelectItem value="Reunião">Reunião</SelectItem>
+                        <SelectItem value="Congresso">Congresso</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <Label className="text-xs text-muted-foreground">Local</Label>
-                <Input
-                  name="location"
-                  placeholder="Ex: Templo Central"
-                  defaultValue={selectedEvent?.location ?? ""}
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs text-muted-foreground">Tipo</Label>
-                <Select
-                  name="type"
-                  defaultValue={selectedEvent?.type ?? "culto"}
-                >
-                  <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="culto">Culto</SelectItem>
-                    <SelectItem value="reuniao">Reunião</SelectItem>
-                    <SelectItem value="congresso">Congresso</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl bg-surface-high p-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Evento Recorrente?</p>
-                  <p className="text-xs text-muted-foreground">
-                    Repete semanalmente no mesmo horário
-                  </p>
+              {/* SEÇÃO 2: DATA E HORA */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-primary">
+                  <Clock className="h-4 w-4" />
+                  <h3 className="text-xs font-semibold uppercase tracking-widest">
+                    Data e Horário
+                  </h3>
                 </div>
-                <Switch
-                  name="isRecurrent"
-                  defaultChecked={selectedEvent?.isRecurrent ?? false}
-                />
+                <div className="space-y-4 bg-surface-high rounded-xl p-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Data *</Label>
+                      <Input
+                        name="date"
+                        type="date"
+                        required
+                        defaultValue={formatDateForInput(selectedEvent?.date ?? null)}
+                        className="mt-1.5 h-10 rounded-xl bg-card border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Horário</Label>
+                      <Input
+                        name="time"
+                        type="time"
+                        defaultValue={selectedEvent?.time ?? ""}
+                        className="mt-1.5 h-10 rounded-xl bg-card border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-xl bg-card p-3 border border-border/50">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Evento Recorrente?</p>
+                      <p className="text-[0.65rem] text-muted-foreground">
+                        Repete semanalmente
+                      </p>
+                    </div>
+                    <Switch
+                      name="isRecurrent"
+                      defaultChecked={selectedEvent?.isRecurrent ?? false}
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4 pb-8">
-                <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1 h-11 rounded-xl border-border"
-                    onClick={() => setSheetOpen(false)}
-                  >
-                    Cancelar
-                  </Button>
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 h-11 rounded-xl gradient-primary text-white"
-                >
-                  {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  {selectedEvent ? "Salvar Alterações" : "Criar Evento"}
-                </Button>
+              {/* SEÇÃO 3: LOCALIZAÇÃO */}
+              <div className="space-y-4 pb-4">
+                <div className="flex items-center gap-2 text-primary">
+                  <MapPin className="h-4 w-4" />
+                  <h3 className="text-xs font-semibold uppercase tracking-widest">
+                    Localização
+                  </h3>
+                </div>
+                <div className="space-y-4 bg-surface-high rounded-xl p-4">
+                  {!isManualLocation ? (
+                    <div className="relative" ref={wrapperRef}>
+                      <Label className="text-xs text-muted-foreground">
+                        Selecione o Local
+                      </Label>
+                      <div className="relative mt-1.5">
+                        <Input
+                          placeholder="Ex: Templo Central ou busque uma célula..."
+                          value={searchLocationQuery}
+                          onChange={(e) => {
+                            setSearchLocationQuery(e.target.value);
+                            setLocationSearchOpen(true);
+                          }}
+                          onFocus={() => setLocationSearchOpen(true)}
+                          className="h-10 rounded-xl bg-card border-0 focus-visible:ring-2 focus-visible:ring-primary/20 pl-10"
+                        />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      </div>
+
+                      {locationSearchOpen && (
+                        <div className="absolute z-10 w-full mt-2 rounded-xl border border-border bg-card shadow-lg overflow-hidden flex flex-col">
+                          <ScrollArea className="max-h-60">
+                            <div className="p-1.5">
+                              <p className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Sugestões
+                              </p>
+                              
+                              {/* Option for Templo Central always shown if it matches query roughly */}
+                              <div
+                                onClick={() => {
+                                  setSearchLocationQuery("Templo Central");
+                                  setLocationSearchOpen(false);
+                                }}
+                                className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
+                              >
+                                <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                                  TC
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium">Templo Central</span>
+                                  <span className="text-[0.65rem] text-muted-foreground">
+                                    Sede da Igreja
+                                  </span>
+                                </div>
+                              </div>
+
+                              {getFilteredLocations().map((c) => (
+                                <div
+                                  key={c.id}
+                                  onClick={() => {
+                                    setSearchLocationQuery(c.name);
+                                    setLocationSearchOpen(false);
+                                  }}
+                                  className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
+                                >
+                                  <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                                    CL
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-medium">{c.name}</span>
+                                    <span className="text-[0.65rem] text-muted-foreground truncate w-48">
+                                      {c.address || "Sem endereço"}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                          <div
+                            onClick={() => {
+                              setIsManualLocation(true);
+                              setLocationSearchOpen(false);
+                            }}
+                            className="bg-surface-lowest p-3 border-t border-border flex items-center justify-between cursor-pointer hover:bg-surface-high transition-colors"
+                          >
+                            <span className="text-sm font-medium text-foreground flex items-center gap-2">
+                              <Plus className="h-4 w-4 text-primary" /> Cadastrar endereço manualmente
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <Label className="text-xs text-muted-foreground font-semibold">Endereço Manual</Label>
+                        <Button 
+                          type="button" 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => setIsManualLocation(false)}
+                          className="h-7 text-xs text-primary"
+                        >
+                          Voltar para busca
+                        </Button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="col-span-full sm:col-span-1">
+                          <Label className="text-xs text-muted-foreground">CEP</Label>
+                          <Input name="cep" className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="00000-000" />
+                        </div>
+                        <div className="col-span-full sm:col-span-2">
+                          <Label className="text-xs text-muted-foreground">Rua/Avenida *</Label>
+                          <Input name="street" required={isManualLocation} className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: Av. Principal" />
+                        </div>
+                        <div className="col-span-1">
+                          <Label className="text-xs text-muted-foreground">Número *</Label>
+                          <Input name="number" required={isManualLocation} className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: 1000" />
+                        </div>
+                        <div className="col-span-1">
+                          <Label className="text-xs text-muted-foreground">Complemento</Label>
+                          <Input name="complement" className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: Sala 2" />
+                        </div>
+                        <div className="col-span-full sm:col-span-2">
+                          <Label className="text-xs text-muted-foreground">Bairro *</Label>
+                          <Input name="neighborhood" required={isManualLocation} className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: Centro" />
+                        </div>
+                        <div className="col-span-1">
+                          <Label className="text-xs text-muted-foreground">Cidade *</Label>
+                          <Input name="city" required={isManualLocation} className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: São Paulo" />
+                        </div>
+                        <div className="col-span-1">
+                          <Label className="text-xs text-muted-foreground">Estado *</Label>
+                          <Input name="state" required={isManualLocation} className="mt-1.5 h-10 rounded-xl bg-card border-0" placeholder="Ex: SP" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
+
             </form>
-          </ScrollArea>
+          </div>
+
+          {/* Persistent Footer Actions */}
+          <div className="border-t border-border bg-card p-6 shrink-0 z-10 flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 h-11 rounded-xl border-border hover:bg-surface-high"
+              onClick={() => setSheetOpen(false)}
+              disabled={saving}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              form="evento-form"
+              disabled={saving}
+              className="flex-1 h-11 rounded-xl gradient-primary text-white shadow-lg hover:shadow-primary/25 transition-all"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {selectedEvent ? "Salvar Alterações" : "Criar Evento"}
+            </Button>
+          </div>
         </SheetContent>
       </Sheet>
 

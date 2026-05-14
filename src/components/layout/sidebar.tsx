@@ -124,20 +124,15 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
           collapsed && !mobileOpen ? "lg:justify-center" : "gap-3"
         )}
       >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl gradient-primary">
-          <span className="text-sm font-bold text-white tracking-wider">
-            IE
-          </span>
+        <div className="flex shrink-0 items-center justify-center">
+          <img src="/logo.png" alt="Logo IEAB" className="h-9 w-auto object-contain" />
         </div>
         <div className={cn(
           "flex flex-col overflow-hidden",
           collapsed && !mobileOpen && "lg:hidden"
         )}>
-          <span className="text-base font-heading font-bold text-foreground tracking-tight">
-            IEAB
-          </span>
-          <span className="text-[0.65rem] uppercase tracking-[0.15em] text-muted-foreground font-medium">
-            Avivamento Bíblico
+          <span className="text-xl font-heading font-bold text-foreground tracking-tight">
+            AVIVADASH
           </span>
         </div>
 

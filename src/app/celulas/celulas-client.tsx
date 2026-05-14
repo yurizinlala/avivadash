@@ -1,11 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  Network, Plus, MapPin, Clock, ChevronRight, Search, Filter,
-  Loader2, Trash2, Users, Map,
+  Network, Plus, MapPin, Clock, Search, Filter,
+  Loader2, Trash2, Users, Map, Edit3, X, User,
+  Calendar, Info, CalendarDays, Phone, ChevronDown, Check, Camera, Image as ImageIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,16 +18,29 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { createCell, updateCell, deleteCell } from "@/lib/actions/cell-actions";
-import type { CellFormData } from "@/lib/validations/cell";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
-import { EmptyState } from "@/components/empty-state";
-import { maskPhone } from "@/lib/masks";
+import { maskPhone, maskCep, maskCpf } from "@/lib/masks";
+import { uploadCellCover } from "@/lib/actions/upload-actions";
+
+// Match extended fields from backend
+interface PersonRow {
+  id: string;
+  fullName: string;
+  phone: string | null;
+  cpf: string | null;
+  birthDate: Date | null;
+  personType: string;
+}
 
 interface CellRow {
   id: string;
   name: string;
+  coverUrl?: string | null;
+  neighborhood?: string | null;
+  leaderId?: string | null;
   leaderName: string;
   leaderPhone: string | null;
   address: string | null;
@@ -40,25 +54,21 @@ interface CellRow {
 }
 
 const GRADIENT_COLORS = [
-  "from-primary/80 to-primary/40",
-  "from-gold/60 to-gold/30",
-  "from-slate-500/60 to-slate-400/30",
-  "from-primary/70 to-primary/30",
-  "from-emerald-500/60 to-emerald-400/30",
-  "from-violet-500/60 to-violet-400/30",
+  "from-slate-700 to-slate-500",
+  "from-primary to-primary/70",
+  "from-slate-600 to-blue-900",
+  "from-emerald-800 to-emerald-600",
+  "from-violet-800 to-violet-600",
+  "from-amber-800 to-amber-600",
 ];
 
 function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+  return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
 interface CelulasClientProps {
   initialCells: CellRow[];
+  people: PersonRow[];
   stats: {
     totalCells: number;
     activeCells: number;
@@ -67,41 +77,208 @@ interface CelulasClientProps {
   };
 }
 
-export function CelulasClient({ initialCells, stats }: CelulasClientProps) {
+export function CelulasClient({ initialCells, stats, people }: CelulasClientProps) {
   const router = useRouter();
-  const [search, setSearch] = React.useState("");
-  const [sheetOpen, setSheetOpen] = React.useState(false);
-  const [selectedCell, setSelectedCell] = React.useState<CellRow | null>(null);
-  const [saving, setSaving] = React.useState(false);
-  const [deleting, setDeleting] = React.useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
-  const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [selectedCell, setSelectedCell] = useState<CellRow | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-  const filtered = initialCells.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.leaderName.toLowerCase().includes(search.toLowerCase())
-  );
+  // AutoComplete Status States
+  const [searchLeaderQuery, setSearchLeaderQuery] = useState("");
+  const [leaderSearchOpen, setLeaderSearchOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setLeaderSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [wrapperRef]);
+
+  // Controlled form state matching people client exactly
+  const [formData, setFormData] = useState({
+    name: "",
+    coverUrl: "",
+    foundedAt: "",
+
+    leaderId: "",
+    leaderName: "",
+    leaderPhone: "",
+    leaderCpf: "",
+    leaderBirthDate: "",
+
+    cep: "",
+    street: "",
+    number: "",
+    complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+
+    dayOfWeek: "",
+    time: "",
+    isActive: true,
+  });
+
+  const [formErrors, setFormErrors] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    if (selectedCell) {
+      setFormData({
+        name: selectedCell.name,
+        coverUrl: selectedCell.coverUrl || "",
+        foundedAt: "",
+
+        leaderId: selectedCell.leaderId || "",
+        leaderName: selectedCell.leaderName,
+        leaderPhone: selectedCell.leaderPhone || "",
+        leaderCpf: "",
+        leaderBirthDate: "",
+
+        // Temporarily parse address string, since backend migration might not have filled these individually yet
+        cep: "",
+        street: selectedCell.address || "",
+        number: "",
+        complement: "",
+        neighborhood: "",
+        city: "",
+        state: "",
+
+        dayOfWeek: selectedCell.dayOfWeek || "",
+        time: selectedCell.time || "",
+        isActive: selectedCell.isActive,
+      });
+      setSearchLeaderQuery(selectedCell.leaderName);
+    } else {
+      setFormData({
+        name: "",
+        coverUrl: "",
+        foundedAt: "",
+        leaderId: "",
+        leaderName: "",
+        leaderPhone: "",
+        leaderCpf: "",
+        leaderBirthDate: "",
+        cep: "",
+        street: "",
+        number: "",
+        complement: "",
+        neighborhood: "",
+        city: "",
+        state: "",
+        dayOfWeek: "",
+        time: "",
+        isActive: true,
+      });
+      setSearchLeaderQuery("");
+    }
+    setFormErrors({});
+  }, [selectedCell, sheetOpen]);
+
+  const updateField = (field: string, value: string | boolean | null) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    if (formErrors[field]) {
+      setFormErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  // ----- SEARCH & LEADERSHIP HANDLING -----
+  const getFilteredPeople = () => {
+    if (!searchLeaderQuery) return people.slice(0, 5);
+    return people
+      .filter((p) => p.fullName.toLowerCase().includes(searchLeaderQuery.toLowerCase()))
+      .slice(0, 5);
+  };
+
+  const selectLeader = (person: PersonRow | null) => {
+    if (person) {
+      setFormData((prev) => ({
+        ...prev,
+        leaderId: person.id,
+        leaderName: person.fullName,
+        leaderPhone: person.phone || "",
+        leaderCpf: person.cpf ? maskCpf(person.cpf) : "",
+        leaderBirthDate: person.birthDate ? new Date(person.birthDate).toISOString().split("T")[0] : "",
+      }));
+      setSearchLeaderQuery(person.fullName);
+    } else {
+      // Manual mode insertion
+      setFormData((prev) => ({
+        ...prev,
+        leaderId: "",
+        leaderName: searchLeaderQuery,
+        leaderPhone: "",
+        leaderCpf: "",
+        leaderBirthDate: "",
+      }));
+    }
+    setLeaderSearchOpen(false);
+  };
+
+  // ----- CEP HANDLING (Borrowed from people-client) -----
+  const fetchAddress = async (cep: string) => {
+    const cleanCep = cep.replace(/\D/g, "");
+    if (cleanCep.length !== 8) return;
+
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+      const data = await res.json();
+      if (!data.erro) {
+        setFormData((prev) => ({
+          ...prev,
+          street: data.logradouro,
+          neighborhood: data.bairro,
+          city: data.localidade,
+          state: data.uf,
+        }));
+      } else {
+        toast.error("CEP não encontrado.");
+      }
+    } catch {
+      toast.error("Erro ao buscar o CEP.");
+    }
+  };
+
+  const handleCepChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const masked = maskCep(e.target.value);
+    updateField("cep", masked);
+    if (masked.replace(/\D/g, "").length === 8) {
+      fetchAddress(masked);
+    }
+  };
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setFormErrors({});
 
-    const fd = new FormData(e.currentTarget);
-    const data: CellFormData = {
-      name: fd.get("name") as string,
-      leaderName: fd.get("leaderName") as string,
-      leaderPhone: fd.get("leaderPhone") as string,
-      address: fd.get("address") as string,
-      dayOfWeek: fd.get("dayOfWeek") as string,
-      time: fd.get("time") as string,
-      isActive: fd.get("isActive") === "on",
-    };
+    // Quick validation before submitting
+    let errors: Record<string, string[]> = {};
+    if (!formData.name.trim()) errors.name = ["Nome da célula é obrigatório"];
+    if (!formData.leaderName.trim()) errors.leaderName = ["O líder é obrigatório"];
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      setSaving(false);
+      toast.error("Preencha os campos obrigatórios.");
+      return;
+    }
 
     try {
       const result = selectedCell
-        ? await updateCell(selectedCell.id, data)
-        : await createCell(data);
+        ? await updateCell(selectedCell.id, formData)
+        : await createCell(formData);
 
       if (result.success) {
         toast.success(
@@ -109,11 +286,15 @@ export function CelulasClient({ initialCells, stats }: CelulasClientProps) {
         );
         setSheetOpen(false);
         setSelectedCell(null);
+        setIsEditing(false);
         router.refresh();
       } else {
-        toast.error(
-          typeof result.error === "string" ? result.error : "Erro de validação."
-        );
+        if (typeof result.error === "object") {
+          setFormErrors(result.error as any);
+          toast.error("Existem erros no formulário.");
+        } else {
+          toast.error(typeof result.error === "string" ? result.error : "Erro ao salvar.");
+        }
       }
     } catch {
       toast.error("Erro inesperado ao salvar.");
@@ -136,6 +317,7 @@ export function CelulasClient({ initialCells, stats }: CelulasClientProps) {
         toast.success("Célula excluída com sucesso!");
         setSheetOpen(false);
         setSelectedCell(null);
+        setIsEditing(false);
         setDeleteDialogOpen(false);
         setPendingDeleteId(null);
         router.refresh();
@@ -154,7 +336,7 @@ export function CelulasClient({ initialCells, stats }: CelulasClientProps) {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-1">
             Gestão de Células
@@ -162,11 +344,14 @@ export function CelulasClient({ initialCells, stats }: CelulasClientProps) {
           <h1 className="text-2xl font-heading font-bold text-foreground tracking-tight">
             Pequenos Grupos
           </h1>
+          <p className="text-sm text-muted-foreground mt-1 max-w-xl">
+            Gerencie as células, líderes e configurações gerais.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link
             href="/celulas/mapa"
-            className="inline-flex items-center gap-2 rounded-xl bg-surface-high px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-lowest transition-colors border border-border"
+            className="inline-flex items-center gap-2 rounded-xl bg-surface-high px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-lowest border border-border"
           >
             <Map className="h-4 w-4" />
             Ver Mapa
@@ -174,6 +359,7 @@ export function CelulasClient({ initialCells, stats }: CelulasClientProps) {
           <Button
             onClick={() => {
               setSelectedCell(null);
+              setIsEditing(true);
               setSheetOpen(true);
             }}
             className="gradient-primary text-white rounded-xl gap-2"
@@ -184,8 +370,7 @@ export function CelulasClient({ initialCells, stats }: CelulasClientProps) {
         </div>
       </div>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: "Células Ativas", value: String(stats.activeCells), accent: true },
           {
@@ -195,13 +380,13 @@ export function CelulasClient({ initialCells, stats }: CelulasClientProps) {
           },
           { label: "Total de Células", value: String(stats.totalCells), sub: null },
           {
-            label: "Média por Célula",
+            label: "Média",
             value: String(stats.avgPerCell),
             sub: "Participantes ativos",
           },
         ].map((s, i) => (
-          <div key={i} className="rounded-xl bg-card p-5 shadow-ambient">
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          <div key={i} className="rounded-xl bg-card p-5 shadow-ambient border border-border/50">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-widest text-muted-foreground">
               {s.label}
             </p>
             <p
@@ -219,287 +404,680 @@ export function CelulasClient({ initialCells, stats }: CelulasClientProps) {
         ))}
       </div>
 
-      {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder="Buscar célula ou líder..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-          />
-        </div>
-      </div>
-
-      {/* Cell Cards Grid */}
+      {/* Cell Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {filtered.map((cell, index) => (
+        {initialCells.map((cell, idx) => (
           <div
             key={cell.id}
-            className={cn(
-              "group rounded-xl bg-card shadow-ambient overflow-hidden transition-all duration-200 hover:shadow-lg cursor-pointer",
-              !cell.isActive && "opacity-60"
-            )}
             onClick={() => {
               setSelectedCell(cell);
+              setIsEditing(false);
               setSheetOpen(true);
             }}
+            className={cn(
+              "group cursor-pointer rounded-2xl bg-card shadow-ambient overflow-hidden transition-all hover:scale-[1.01] hover:shadow-lg",
+              !cell.isActive && "opacity-70 grayscale-[0.3]"
+            )}
           >
-            {/* Cover Image Area */}
-            <div
-              className={cn(
-                "relative h-32 bg-gradient-to-br",
-                GRADIENT_COLORS[index % GRADIENT_COLORS.length]
+            {/* Cover Image / Gradient */}
+            <div className={cn(
+              "relative h-36 bg-gradient-to-br overflow-hidden",
+              GRADIENT_COLORS[idx % GRADIENT_COLORS.length]
+            )}>
+              {cell.coverUrl && (
+                <img
+                  src={cell.coverUrl}
+                  alt={cell.name}
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
               )}
-            >
-              <div className="absolute inset-0 bg-black/20" />
-              {!cell.isActive && (
-                <Badge className="absolute top-3 left-3 rounded-md text-[0.6rem] font-semibold uppercase border-0 bg-red-500/90 text-white">
-                  INATIVA
-                </Badge>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+
+              {/* Zone/Neighborhood Badge */}
+              {cell.neighborhood && (
+                <span className="absolute top-3 left-3 bg-white/20 backdrop-blur-sm text-white text-[0.6rem] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md">
+                  {cell.neighborhood}
+                </span>
               )}
+
+              {/* Active indicator */}
+              <div className={cn(
+                "absolute top-3 right-3 h-2.5 w-2.5 rounded-full shadow-lg",
+                cell.isActive ? "bg-green-400" : "bg-red-400"
+              )} />
             </div>
 
-            {/* Card Body */}
-            <div className="p-4 space-y-3">
+            {/* Content */}
+            <div className="p-4 space-y-2.5">
               <div>
-                <h3 className="text-base font-heading font-bold text-foreground">
+                <h3 className="text-lg font-heading font-bold text-foreground group-hover:text-primary transition-colors">
                   {cell.name}
                 </h3>
-                <p className="text-xs text-muted-foreground">
-                  Líder: {cell.leaderName}
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Líder: <span className="font-medium text-foreground">{cell.leaderName}</span>
                 </p>
               </div>
 
+              {/* Schedule & Address */}
               <div className="space-y-1.5">
-                {cell.dayOfWeek && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5 shrink-0 text-primary/60" />
-                    <span>
-                      {cell.dayOfWeek}
-                      {cell.time ? `, ${cell.time}` : ""}
-                    </span>
+                {(cell.dayOfWeek || cell.time) && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
+                    <span>{cell.dayOfWeek}{cell.dayOfWeek && cell.time ? ", " : ""}{cell.time}</span>
                   </div>
                 )}
                 {cell.address && (
-                  <div className="flex items-start gap-2 text-xs text-muted-foreground">
-                    <MapPin className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary/60" />
-                    <span>{cell.address}</span>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                    <span className="truncate" title={cell.address}>{cell.address}</span>
                   </div>
                 )}
               </div>
 
-              {/* Footer */}
-              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+              {/* Footer: Members + Details */}
+              <div className="pt-2.5 border-t border-border flex items-center justify-between">
                 <div className="flex items-center">
-                  <div className="flex -space-x-2">
-                    {cell.members.slice(0, 3).map((m) => (
-                      <div
-                        key={m.id}
-                        className="h-7 w-7 rounded-full bg-primary/10 text-primary text-[0.55rem] font-semibold flex items-center justify-center ring-2 ring-card"
-                      >
-                        {getInitials(m.fullName)}
+                  <div className="flex -space-x-1.5">
+                    {Array.from({ length: Math.min(3, cell._count.members) }).map((_, i) => (
+                      <div key={i} className="h-6 w-6 rounded-full bg-primary/15 border-2 border-card flex items-center justify-center text-[9px] font-bold text-primary">
+                        {cell.members[i] ? getInitials(cell.members[i].fullName) : `M${i + 1}`}
                       </div>
                     ))}
                   </div>
-                  {cell._count.members > 3 && (
-                    <span className="text-xs text-muted-foreground ml-2">
-                      +{cell._count.members - 3}
+                  {cell._count.members > 0 && (
+                    <span className="ml-1.5 text-[10px] font-semibold text-white bg-primary rounded-full px-1.5 py-0.5">
+                      +{cell._count.members}
                     </span>
                   )}
                   {cell._count.members === 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      Sem membros
-                    </span>
+                    <span className="text-[11px] text-muted-foreground">Sem membros</span>
                   )}
                 </div>
-                <span className="flex items-center gap-1 text-xs font-medium text-primary">
-                  <Users className="h-3 w-3" /> {cell._count.members}
+                <span className="text-[11px] font-semibold text-primary flex items-center gap-1">
+                  Ver Detalhes →
                 </span>
               </div>
             </div>
           </div>
         ))}
 
-        {/* Empty State Card */}
+        {/* Add New Cell Card */}
         <div
           onClick={() => {
             setSelectedCell(null);
+            setIsEditing(true);
             setSheetOpen(true);
           }}
-          className="rounded-xl border-2 border-dashed border-border bg-card/50 p-6 flex flex-col items-center justify-center text-center space-y-3 min-h-[280px] cursor-pointer hover:border-primary/40 transition-colors"
+          className="rounded-2xl border-2 border-dashed border-border bg-card/50 p-6 flex flex-col items-center justify-center text-center space-y-3 min-h-[320px] cursor-pointer hover:border-primary/40 transition-colors"
         >
           <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-            <Network className="h-6 w-6 text-primary" />
+            <Plus className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h3 className="text-sm font-heading font-semibold text-foreground">
-              Novos Começos
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
-              Inicie uma nova célula para expandir o alcance da comunidade.
-            </p>
+            <h3 className="text-sm font-heading font-bold text-foreground">Nova Célula</h3>
+            <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">Crie uma nova célula com dados completos.</p>
           </div>
-          <Button variant="outline" size="sm" className="rounded-xl gap-1.5">
-            <Plus className="h-3.5 w-3.5" />
-            Cadastrar Célula
-          </Button>
         </div>
       </div>
 
-      {/* Sheet for Create/Edit */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-md p-0 border-0 bg-card">
-          <SheetHeader className="px-6 pt-6 pb-4 border-b border-border">
+        <SheetContent className="w-full sm:max-w-md md:max-w-xl p-0 border-l border-border bg-card shadow-2xl flex flex-col h-full">
+          <SheetHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <div className="flex items-center justify-between">
               <div>
                 <SheetTitle className="text-lg font-heading font-bold">
-                  {selectedCell ? selectedCell.name : "Nova Célula"}
+                  {selectedCell
+                    ? isEditing
+                      ? selectedCell.name
+                      : selectedCell.name
+                    : "Novo Cadastro"}
                 </SheetTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {selectedCell
-                    ? "Editar informações da célula"
-                    : "Preencha os dados da nova célula"}
+                    ? isEditing
+                      ? "Editar informações"
+                      : `Líder: ${selectedCell.leaderName}`
+                    : "Preencha os dados do novo cadastro"}
                 </p>
               </div>
-              {selectedCell && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                  onClick={() => requestDelete(selectedCell.id)}
-                  disabled={deleting}
-                >
-                  {deleting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
+              <div className="flex items-center gap-1.5">
+                {selectedCell && !isEditing && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 rounded-lg border-border"
+                    onClick={() => setIsEditing(true)}
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                    Editar
+                  </Button>
+                )}
+                {/* Replaced buggy dynamic X button with static SheetClose default */}
+              </div>
             </div>
           </SheetHeader>
 
-          <ScrollArea className="h-[calc(100vh-8rem)]">
-            <form onSubmit={handleSubmit} className="px-6 py-6 space-y-5">
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  Nome da Célula *
-                </Label>
-                <Input
-                  name="name"
-                  required
-                  placeholder="Ex: Célula Ágape"
-                  defaultValue={selectedCell?.name}
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  Nome do Líder *
-                </Label>
-                <Input
-                  name="leaderName"
-                  required
-                  placeholder="Ex: Ricardo & Ana Silva"
-                  defaultValue={selectedCell?.leaderName}
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  Telefone do Líder
-                </Label>
-                <Input
-                  name="leaderPhone"
-                  placeholder="(11) 00000-0000"
-                  defaultValue={selectedCell?.leaderPhone ?? ""}
-                  onChange={(e) => { e.target.value = maskPhone(e.target.value); }}
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-                />
-              </div>
-
-              <div>
-                <Label className="text-xs text-muted-foreground">Endereço</Label>
-                <Input
-                  name="address"
-                  placeholder="Rua, número — Bairro"
-                  defaultValue={selectedCell?.address ?? ""}
-                  className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs text-muted-foreground">
-                    Dia da Semana
-                  </Label>
-                  <Input
-                    name="dayOfWeek"
-                    placeholder="Ex: Quartas-feiras"
-                    defaultValue={selectedCell?.dayOfWeek ?? ""}
-                    className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-                  />
+          <ScrollArea className="flex-1 overflow-y-auto">
+            {!isEditing && selectedCell ? (
+              <div className="p-6 space-y-8 pb-4">
+                {/* Read-Only Visuals Left the Same or Slightly Improved */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <Info className="h-4 w-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-widest">
+                      Identificação
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-y-4 gap-x-6 bg-surface-high rounded-xl p-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Célula</p>
+                      <p className="text-sm font-medium">{selectedCell.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Status</p>
+                      <Badge className={cn("text-[0.65rem] border-0", selectedCell.isActive ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-600")}>
+                        {selectedCell.isActive ? "ATIVA" : "INATIVA"}
+                      </Badge>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">Horário</Label>
-                  <Input
-                    name="time"
-                    placeholder="Ex: 20:00"
-                    defaultValue={selectedCell?.time ?? ""}
-                    className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
-                  />
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <User className="h-4 w-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-widest">
+                      Líder Responsável
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-y-4 gap-x-6 bg-surface-high rounded-xl p-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Líder Relacional</p>
+                      <p className="text-sm font-medium">{selectedCell.leaderName}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Telefone</p>
+                      <p className="text-sm font-medium">{selectedCell.leaderPhone || "-"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <Clock className="h-4 w-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-widest">
+                      Funcionamento
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-y-4 gap-x-6 bg-surface-high rounded-xl p-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Dia da Semana</p>
+                      <p className="text-sm font-medium">{selectedCell.dayOfWeek || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Horário</p>
+                      <p className="text-sm font-medium">{selectedCell.time || "-"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <MapPin className="h-4 w-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-widest">
+                      Endereço
+                    </h3>
+                  </div>
+                  <div className="bg-surface-high rounded-xl p-4">
+                    <p className="text-sm font-medium leading-relaxed">{selectedCell.address || "Não informado."}</p>
+                  </div>
+                </div>
+
+                {/* Members Read-Only Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <Users className="h-4 w-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-widest">
+                      Participantes da Célula ({selectedCell._count.members})
+                    </h3>
+                  </div>
+                  {selectedCell.members.length > 0 ? (
+                    <div className="space-y-3">
+                      {selectedCell.members.map((member) => (
+                        <div key={member.id} className="flex items-center gap-3 p-3 rounded-xl bg-surface-high/50 border border-border/50">
+                          <div className="h-8 w-8 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center shrink-0">
+                            {getInitials(member.fullName)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{member.fullName}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 capitalize">{member.personType.toLowerCase()}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-6 text-center text-muted-foreground text-sm bg-surface-high/30 rounded-xl border border-dashed border-border">
+                      Nenhum participante vinculado a esta célula ainda.
+                    </div>
+                  )}
                 </div>
               </div>
+            ) : (
+              // FULL EDIT AND CREATION MODE
+              <form onSubmit={handleSubmit} className="p-6 space-y-8 pb-4">
 
-              <div className="flex items-center justify-between rounded-xl bg-surface-high p-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Célula Ativa?</p>
-                  <p className="text-xs text-muted-foreground">
-                    Células inativas ficam ocultas na listagem padrão
-                  </p>
+                {/* IDENTIFICAÇÃO */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <Info className="h-4 w-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-widest">
+                      Identificação
+                    </h3>
+                  </div>
+
+                  <div>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.name && "text-red-500")}>
+                      Nome da Célula *
+                    </Label>
+                    <Input
+                      name="name"
+                      required
+                      placeholder="Ex: Célula Ágape"
+                      value={formData.name}
+                      onChange={(e) => updateField("name", e.target.value)}
+                      className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.name && "border border-red-500")}
+                    />
+                  </div>
+
+                  {selectedCell ? (
+                    <div className="flex items-center gap-4 p-3 rounded-xl bg-surface-high">
+                      <div className="relative group shrink-0">
+                        <div className="h-16 w-24 rounded-xl bg-primary/10 flex items-center justify-center text-primary overflow-hidden border border-primary/20">
+                          {selectedCell.coverUrl ? (
+                            <img src={selectedCell.coverUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <ImageIcon className="h-6 w-6 text-primary/50" />
+                          )}
+                        </div>
+                        <label className="absolute inset-0 rounded-xl bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+                          <Camera className="h-5 w-5 text-white" />
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            className="sr-only"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const fd = new FormData();
+                              fd.append("cover", file);
+                              const result = await uploadCellCover(selectedCell.id, fd);
+                              if (result.success) {
+                                toast.success("Foto atualizada!");
+                                router.refresh();
+                              } else {
+                                toast.error(result.error || "Erro ao enviar foto.");
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Foto de Capa</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Clique na imagem para alterar<br/>JPG, PNG ou WebP • Máx. 2MB</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-4 p-3 rounded-xl bg-surface-high border border-dashed border-border">
+                      <div className="h-16 w-24 rounded-xl bg-surface-lowest flex items-center justify-center text-muted-foreground shrink-0">
+                        <ImageIcon className="h-6 w-6 opacity-30" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Foto de Capa</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Você poderá adicionar uma foto de capa após salvar o cadastro inicial da célula.</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.foundedAt && "text-red-500")}>
+                      Data de Fundação
+                    </Label>
+                    <Input
+                      name="foundedAt"
+                      type="date"
+                      value={formData.foundedAt}
+                      onChange={(e) => updateField("foundedAt", e.target.value)}
+                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-xl bg-surface-high p-4">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        Célula Ativa?
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Identifica se a célula está em pleno funcionamento.
+                      </p>
+                    </div>
+                    <Switch
+                      name="isActive"
+                      checked={formData.isActive}
+                      onCheckedChange={(val) => updateField("isActive", val)}
+                    />
+                  </div>
                 </div>
-                <Switch
-                  name="isActive"
-                  defaultChecked={selectedCell?.isActive ?? true}
-                />
-              </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4 pb-8">
-                <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1 h-11 rounded-xl border-border"
-                    onClick={() => setSheetOpen(false)}
-                  >
-                    Cancelar
-                  </Button>
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 h-11 rounded-xl gradient-primary text-white"
-                >
-                  {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  {selectedCell ? "Salvar Alterações" : "Cadastrar"}
-                </Button>
-              </div>
-            </form>
+                {/* LIDERANÇA COM AUTOCOMPLETE */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <User className="h-4 w-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-widest">
+                      Liderança
+                    </h3>
+                  </div>
+
+                  <div className="relative" ref={wrapperRef}>
+                    <Label className={cn("text-xs text-muted-foreground", formErrors.leaderName && "text-red-500")}>
+                      Líder Responsável *
+                    </Label>
+                    <div className="relative mt-1.5">
+                      <Input
+                        placeholder="Busque ou digite o nome do líder..."
+                        value={searchLeaderQuery}
+                        onChange={(e) => {
+                          setSearchLeaderQuery(e.target.value);
+                          updateField("leaderName", e.target.value);
+                          if (formData.leaderId) updateField("leaderId", ""); // clear ID if user typed
+                          setLeaderSearchOpen(true);
+                        }}
+                        onFocus={() => setLeaderSearchOpen(true)}
+                        className={cn("h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 pl-10", formErrors.leaderName && "border border-red-500")}
+                      />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    </div>
+
+                    {leaderSearchOpen && searchLeaderQuery && !formData.leaderId && (
+                      <div className="absolute z-10 w-full mt-2 rounded-xl border border-border bg-card shadow-lg overflow-hidden flex flex-col">
+                        <ScrollArea className="max-h-60">
+                          {getFilteredPeople().length > 0 ? (
+                            <div className="p-1.5">
+                              <p className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Sugestões do Sistema
+                              </p>
+                              {getFilteredPeople().map((p) => (
+                                <div
+                                  key={p.id}
+                                  onClick={() => selectLeader(p)}
+                                  className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
+                                >
+                                  <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                                    {getInitials(p.fullName)}
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-medium">{p.fullName}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {p.cpf ? `CPF: ${maskCpf(p.cpf)}` : "Sem CPF"} • {p.phone || "Sem contato"}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="p-4 text-center">
+                              <p className="text-sm text-muted-foreground">Nenhuma pessoa encontrada.</p>
+                            </div>
+                          )}
+                        </ScrollArea>
+                        <div
+                          onClick={() => selectLeader(null)}
+                          className="bg-surface-lowest p-3 border-t border-border flex items-center justify-between cursor-pointer hover:bg-surface-high transition-colors"
+                        >
+                          <span className="text-sm font-medium text-foreground flex items-center gap-2">
+                            <Plus className="h-4 w-4 text-primary" /> Cadastrar como novo líder manual
+                          </span>
+                          <span className="text-xs text-muted-foreground">"{searchLeaderQuery}"</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {formData.leaderId ? (
+                    <div className="p-4 bg-primary/5 rounded-xl border border-primary/20 flex items-start gap-4">
+                      <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shrink-0">
+                        {getInitials(formData.leaderName)}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{formData.leaderName}</p>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                          <Check className="h-3 w-3 text-green-500" /> Vínculo automático no sistema
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="sm" className="ml-auto" onClick={() => selectLeader(null)}>Limpar</Button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 pb-2">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Telefone do Líder</Label>
+                        <Input
+                          name="leaderPhone"
+                          value={formData.leaderPhone}
+                          onChange={(e) => updateField("leaderPhone", maskPhone(e.target.value))}
+                          placeholder="(11) 00000-0000"
+                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">CPF do Líder</Label>
+                        <Input
+                          name="leaderCpf"
+                          value={formData.leaderCpf}
+                          onChange={(e) => updateField("leaderCpf", maskCpf(e.target.value))}
+                          placeholder="000.000.000-00"
+                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Label className="text-xs text-muted-foreground">Data de Nascimento (Líder)</Label>
+                        <Input
+                          type="date"
+                          name="leaderBirthDate"
+                          value={formData.leaderBirthDate}
+                          onChange={(e) => updateField("leaderBirthDate", e.target.value)}
+                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ENDEREÇO DA CÉLULA */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <MapPin className="h-4 w-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-widest">
+                      Endereço da Célula
+                    </h3>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">CEP</Label>
+                        <Input
+                          name="cep"
+                          placeholder="00000-000"
+                          value={formData.cep}
+                          onChange={handleCepChange}
+                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Label className="text-xs text-muted-foreground">Rua</Label>
+                        <Input
+                          name="street"
+                          placeholder="Nome da Rua"
+                          value={formData.street}
+                          onChange={(e) => updateField('street', e.target.value)}
+                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Número</Label>
+                        <Input
+                          name="number"
+                          placeholder="Nº"
+                          value={formData.number}
+                          onChange={(e) => updateField('number', e.target.value)}
+                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Label className="text-xs text-muted-foreground">Complemento</Label>
+                        <Input
+                          name="complement"
+                          placeholder="Apto, Bloco..."
+                          value={formData.complement}
+                          onChange={(e) => updateField('complement', e.target.value)}
+                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Bairro</Label>
+                        <Input
+                          name="neighborhood"
+                          placeholder="Bairro"
+                          value={formData.neighborhood}
+                          onChange={(e) => updateField('neighborhood', e.target.value)}
+                          className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="col-span-2">
+                          <Label className="text-xs text-muted-foreground">Cidade</Label>
+                          <Input
+                            name="city"
+                            placeholder="Cidade"
+                            value={formData.city}
+                            onChange={(e) => updateField('city', e.target.value)}
+                            className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">UF</Label>
+                          <Input
+                            name="state"
+                            placeholder="UF"
+                            maxLength={2}
+                            value={formData.state}
+                            onChange={(e) => updateField('state', e.target.value.toUpperCase())}
+                            className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 uppercase"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* FUNCIONAMENTO */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <Clock className="h-4 w-4" />
+                    <h3 className="text-xs font-semibold uppercase tracking-widest">
+                      Funcionamento
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pb-4">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Dia da Semana</Label>
+                      <Select
+                        value={formData.dayOfWeek}
+                        onValueChange={(val) => updateField("dayOfWeek", val)}
+                      >
+                        <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0">
+                          <SelectValue placeholder="Escolha um dia..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Domingos">Domingos</SelectItem>
+                          <SelectItem value="Segundas-feiras">Segundas-feiras</SelectItem>
+                          <SelectItem value="Terças-feiras">Terças-feiras</SelectItem>
+                          <SelectItem value="Quartas-feiras">Quartas-feiras</SelectItem>
+                          <SelectItem value="Quintas-feiras">Quintas-feiras</SelectItem>
+                          <SelectItem value="Sextas-feiras">Sextas-feiras</SelectItem>
+                          <SelectItem value="Sábados">Sábados</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Horário</Label>
+                      <Input
+                        name="time"
+                        type="time"
+                        value={formData.time}
+                        onChange={(e) => updateField("time", e.target.value)}
+                        className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </form>
+            )}
           </ScrollArea>
+
+          {/* Persistent Footer Actions */}
+          {isEditing && (
+            <div className="border-t border-border bg-card p-6 shrink-0 z-10 flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 h-11 rounded-xl border-border hover:bg-surface-high"
+                onClick={() => setIsEditing(false)}
+                disabled={saving}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSubmit}
+                disabled={saving}
+                className="flex-1 h-11 rounded-xl gradient-primary text-white shadow-lg hover:shadow-primary/25 transition-all gap-2"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
+                {selectedCell ? "Salvar Alterações" : "Cadastrar Célula"}
+              </Button>
+            </div>
+          )}
+          {!isEditing && selectedCell && (
+            <div className="border-t border-border bg-card p-6 shrink-0 flex gap-3 h-[88px] items-center justify-between">
+              <Button
+                variant="destructive"
+                className="h-11 rounded-xl w-11 p-0 shrink-0 bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white"
+                onClick={() => requestDelete(selectedCell.id)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              <Button
+                className="flex-1 h-11 rounded-xl gradient-primary text-white"
+                onClick={() => setIsEditing(true)}
+              >
+                <Edit3 className="mr-2 h-4 w-4" /> Editar Célula
+              </Button>
+            </div>
+          )}
         </SheetContent>
       </Sheet>
 
-      {/* Confirm Delete Dialog */}
       <ConfirmDeleteDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         onConfirm={handleDelete}
         loading={deleting}
         title="Excluir Célula"
-        description="Esta ação é irreversível. Os membros vinculados serão desassociados desta célula."
+        description="Esta ação é irreversível. Os membros vinculados a esta célula serão desvinculados."
       />
     </div>
   );

@@ -14,7 +14,7 @@ export async function getCells(search?: string) {
     ];
   }
 
-  return prisma.cell.findMany({
+  const cells = await prisma.cell.findMany({
     where,
     include: {
       members: {
@@ -24,6 +24,22 @@ export async function getCells(search?: string) {
       _count: { select: { members: true } },
     },
     orderBy: { name: "asc" },
+  });
+
+  // Construct readable address from separate fields
+  return cells.map((cell) => {
+    const addressParts = [
+      cell.street,
+      cell.number,
+      cell.complement,
+      cell.neighborhood,
+      cell.city,
+      cell.state,
+    ].filter(Boolean);
+    return {
+      ...cell,
+      address: addressParts.length > 0 ? addressParts.join(", ") : null,
+    };
   });
 }
 
@@ -54,19 +70,55 @@ export async function createCell(formData: CellFormData) {
   }
 
   try {
+    const d = result.data;
+
     // Geocode address if provided
     let latitude: number | undefined;
     let longitude: number | undefined;
-    if (result.data.address) {
-      const geo = await geocodeAddress(result.data.address);
+    const fullAddress = [d.street, d.number, d.neighborhood, d.city, d.state].filter(Boolean).join(", ");
+    if (fullAddress && fullAddress.length > 5) {
+      const geo = await geocodeAddress(fullAddress);
       if (geo) {
         latitude = geo.latitude;
         longitude = geo.longitude;
       }
     }
 
+    let foundedAtDate: Date | null = null;
+    if (d.foundedAt) {
+      const parsedDate = new Date(d.foundedAt + "T12:00:00Z");
+      if (!isNaN(parsedDate.getTime())) foundedAtDate = parsedDate;
+    }
+
+    let leaderBirthDateParsed: Date | null = null;
+    if (d.leaderBirthDate) {
+      const parsed = new Date(d.leaderBirthDate + "T12:00:00Z");
+      if (!isNaN(parsed.getTime())) leaderBirthDateParsed = parsed;
+    }
+
     await prisma.cell.create({
-      data: { ...result.data, latitude, longitude },
+      data: {
+        name: d.name,
+        coverUrl: d.coverUrl || null,
+        foundedAt: foundedAtDate,
+        leaderId: d.leaderId || null,
+        leaderName: d.leaderName,
+        leaderPhone: d.leaderPhone || null,
+        leaderCpf: d.leaderCpf || null,
+        leaderBirthDate: leaderBirthDateParsed,
+        cep: d.cep || null,
+        street: d.street || null,
+        number: d.number || null,
+        complement: d.complement || null,
+        neighborhood: d.neighborhood || null,
+        city: d.city || null,
+        state: d.state || null,
+        dayOfWeek: d.dayOfWeek || null,
+        time: d.time || null,
+        isActive: d.isActive,
+        latitude,
+        longitude,
+      },
     });
     revalidatePath("/celulas");
     revalidatePath("/");
@@ -84,18 +136,56 @@ export async function updateCell(id: string, formData: CellFormData) {
   }
 
   try {
+    const d = result.data;
+
     // Geocode address if changed
-    let geoData: { latitude?: number; longitude?: number } = {};
-    if (result.data.address) {
-      const geo = await geocodeAddress(result.data.address);
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+    const fullAddress = [d.street, d.number, d.neighborhood, d.city, d.state].filter(Boolean).join(", ");
+    if (fullAddress && fullAddress.length > 5) {
+      const geo = await geocodeAddress(fullAddress);
       if (geo) {
-        geoData = { latitude: geo.latitude, longitude: geo.longitude };
+        latitude = geo.latitude;
+        longitude = geo.longitude;
       }
+    }
+
+    let foundedAtDate: Date | null = null;
+    if (d.foundedAt) {
+      const parsedDate = new Date(d.foundedAt + "T12:00:00Z");
+      if (!isNaN(parsedDate.getTime())) foundedAtDate = parsedDate;
+    }
+
+    let leaderBirthDateParsed: Date | null = null;
+    if (d.leaderBirthDate) {
+      const parsed = new Date(d.leaderBirthDate + "T12:00:00Z");
+      if (!isNaN(parsed.getTime())) leaderBirthDateParsed = parsed;
     }
 
     await prisma.cell.update({
       where: { id },
-      data: { ...result.data, ...geoData },
+      data: {
+        name: d.name,
+        coverUrl: d.coverUrl || null,
+        foundedAt: foundedAtDate,
+        leaderId: d.leaderId || null,
+        leaderName: d.leaderName,
+        leaderPhone: d.leaderPhone || null,
+        leaderCpf: d.leaderCpf || null,
+        leaderBirthDate: leaderBirthDateParsed,
+        cep: d.cep || null,
+        street: d.street || null,
+        number: d.number || null,
+        complement: d.complement || null,
+        neighborhood: d.neighborhood || null,
+        city: d.city || null,
+        state: d.state || null,
+        dayOfWeek: d.dayOfWeek || null,
+        time: d.time || null,
+        isActive: d.isActive,
+        latitude,
+        longitude,
+      },
     });
     revalidatePath("/celulas");
     revalidatePath("/");

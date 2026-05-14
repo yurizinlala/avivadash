@@ -44,7 +44,7 @@ export async function createEvent(formData: EventFormData) {
       data: {
         title: data.title,
         description: data.description || null,
-        date: new Date(data.date),
+        date: new Date(`${data.date}T12:00:00Z`),
         time: data.time || null,
         location: data.location || null,
         type: data.type,
@@ -75,7 +75,7 @@ export async function updateEvent(id: string, formData: EventFormData) {
       data: {
         title: data.title,
         description: data.description || null,
-        date: new Date(data.date),
+        date: new Date(`${data.date}T12:00:00Z`),
         time: data.time || null,
         location: data.location || null,
         type: data.type,

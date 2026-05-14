@@ -57,8 +57,9 @@ model Person {
   state        String?
 
   // Relationships
-  cellId String?
-  cell   Cell?   @relation(fields: [cellId], references: [id])
+  cellId   String?
+  cell     Cell?    @relation("CellMember", fields: [cellId], references: [id])
+  ledCells Cell[]   @relation("CellLeader")
 
   // Metadata
   notes     String?
@@ -72,9 +73,25 @@ model Person {
 model Cell {
   id          String  @id @default(cuid())
   name        String
-  leaderName  String
-  leaderPhone String?
-  address     String?
+  coverUrl    String?
+  foundedAt   DateTime?
+
+  // Leader Information
+  leaderName      String
+  leaderPhone     String?
+  leaderCpf       String?
+  leaderBirthDate DateTime?
+
+  // Address
+  cep          String?
+  street       String?
+  number       String?
+  complement   String?
+  neighborhood String?
+  city         String?
+  state        String?
+
+  // Functioning
   dayOfWeek   String?
   time        String?
   isActive    Boolean @default(true)
@@ -84,7 +101,9 @@ model Cell {
   longitude Float?
 
   // Relationships
-  members Person[]
+  leaderId String?
+  leader   Person?  @relation("CellLeader", fields: [leaderId], references: [id])
+  members  Person[] @relation("CellMember")
 
   // Metadata
   createdAt DateTime @default(now())

@@ -39,7 +39,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { toast } from "sonner";
 import { createPerson, updatePerson, deletePerson } from "@/lib/actions/person-actions";
 import type { PersonFormData } from "@/lib/validations/person";
@@ -757,8 +757,8 @@ export function PessoasClient({
 
       {/* Registration Sheet (Side Panel) */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-lg p-0 border-0 bg-card">
-          <SheetHeader className="px-6 pt-6 pb-4 border-b border-border">
+        <SheetContent className="w-full sm:max-w-lg p-0 border-0 bg-card flex flex-col h-full">
+          <SheetHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <div className="flex items-center justify-between">
               <div>
                 <SheetTitle className="text-lg font-heading font-bold">
@@ -788,8 +788,8 @@ export function PessoasClient({
             </div>
           </SheetHeader>
 
-          <ScrollArea className="h-[calc(100vh-8rem)]">
-            <form onSubmit={handleSubmit} className="px-6 py-6 space-y-8">
+          <div className="flex-1 overflow-y-auto">
+            <form id="pessoa-form" onSubmit={handleSubmit} className="px-6 py-6 space-y-8">
               {/* Dados Pessoais */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-primary">
@@ -1119,7 +1119,7 @@ export function PessoasClient({
                       <Input
                         name="cep"
                         placeholder="00000-000"
-                        defaultValue={selectedPerson?.cep ?? ""}
+                        value={formData.cep}
                         onChange={handleCepChange}
                         className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
                       />
@@ -1129,7 +1129,8 @@ export function PessoasClient({
                       <Input
                         name="street"
                         placeholder="Nome da Rua"
-                        defaultValue={selectedPerson?.street ?? ""}
+                        value={formData.street}
+                        onChange={(e) => updateField('street', e.target.value)}
                         className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
                       />
                     </div>
@@ -1142,7 +1143,8 @@ export function PessoasClient({
                       <Input
                         name="number"
                         placeholder="Nº"
-                        defaultValue={selectedPerson?.number ?? ""}
+                        value={formData.number}
+                        onChange={(e) => updateField('number', e.target.value)}
                         className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
                       />
                     </div>
@@ -1153,7 +1155,8 @@ export function PessoasClient({
                       <Input
                         name="neighborhood"
                         placeholder="Bairro"
-                        defaultValue={selectedPerson?.neighborhood ?? ""}
+                        value={formData.neighborhood}
+                        onChange={(e) => updateField('neighborhood', e.target.value)}
                         className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
                       />
                     </div>
@@ -1166,7 +1169,8 @@ export function PessoasClient({
                       <Input
                         name="city"
                         placeholder="Cidade"
-                        defaultValue={selectedPerson?.city ?? ""}
+                        value={formData.city}
+                        onChange={(e) => updateField('city', e.target.value)}
                         className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20"
                       />
                     </div>
@@ -1178,7 +1182,8 @@ export function PessoasClient({
                         name="state"
                         placeholder="UF"
                         maxLength={2}
-                        defaultValue={selectedPerson?.state ?? ""}
+                        value={formData.state}
+                        onChange={(e) => updateField('state', e.target.value.toUpperCase())}
                         className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20 uppercase"
                       />
                     </div>
@@ -1193,32 +1198,36 @@ export function PessoasClient({
                   name="notes"
                   rows={3}
                   placeholder="Anotações gerais..."
-                  defaultValue={selectedPerson?.notes ?? ""}
+                  value={formData.notes}
+                  onChange={(e) => updateField('notes', e.target.value)}
                   className="mt-1.5 w-full rounded-xl bg-surface-high border-0 p-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 resize-none"
                 />
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4 pb-8">
-                <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1 h-11 rounded-xl border-border"
-                    onClick={() => setSheetOpen(false)}
-                  >
-                    Cancelar
-                  </Button>
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 h-11 rounded-xl gradient-primary text-white"
-                >
-                  {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  {selectedPerson ? "Salvar Alterações" : "Cadastrar"}
-                </Button>
-              </div>
             </form>
-          </ScrollArea>
+          </div>
+
+          {/* Persistent Footer Actions */}
+          <div className="border-t border-border bg-card p-6 shrink-0 z-10 flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 h-11 rounded-xl border-border hover:bg-surface-high"
+              onClick={() => setSheetOpen(false)}
+              disabled={saving}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              form="pessoa-form"
+              disabled={saving}
+              className="flex-1 h-11 rounded-xl gradient-primary text-white shadow-lg hover:shadow-primary/25 transition-all"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {selectedPerson ? "Salvar Alterações" : "Cadastrar"}
+            </Button>
+          </div>
         </SheetContent>
       </Sheet>
 
