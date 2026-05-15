@@ -1,4 +1,5 @@
 import jsPDF from "jspdf";
+import { getCertificateTemplate, getCertificateTitle } from "@/lib/certificates";
 
 export interface CertificatePDFData {
   id: string;
@@ -11,14 +12,13 @@ export interface CertificatePDFData {
   issuerName: string | null;
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  BATISMO: "Certificado de Batismo",
-  MEMBRESIA: "Certificado de Membresia",
-  APRESENTACAO: "Certificado de Apresentação",
-  CURSO: "Certificado de Conclusão",
-  HONRA: "Certificado de Honra",
-  PARTICIPACAO: "Certificado de Participação",
-};
+const CANVAS_WIDTH = 2000;
+const CANVAS_HEIGHT = 1414;
+const FONT_LAVANDERIA = "CertificateLavanderia";
+const FONT_SANSATION = "CertificateSansation";
+const FONT_SANSATION_BOLD = "CertificateSansationBold";
+
+let fontsReady: Promise<void> | null = null;
 
 function formatLongDate(value: string | Date) {
   return new Date(value).toLocaleDateString("pt-BR", {
@@ -37,89 +37,213 @@ function sanitizeFileName(value: string) {
     .slice(0, 80);
 }
 
-export function generateCertificatePDF(certificate: CertificatePDFData) {
+async function ensureCertificateFonts() {
+  if (fontsReady) return fontsReady;
+
+  fontsReady = (async () => {
+    if (typeof FontFace === "undefined" || !document?.fonts) return;
+
+    const fontFaces = [
+      new FontFace(
+        FONT_LAVANDERIA,
+        "url('/certificates/fonts/Lavanderia%20Sturdy.otf')"
+      ),
+      new FontFace(
+        FONT_SANSATION,
+        "url('/certificates/fonts/Sansation-Regular.ttf')"
+      ),
+      new FontFace(
+        FONT_SANSATION_BOLD,
+        "url('/certificates/fonts/Sansation-Bold.ttf')"
+      ),
+    ];
+
+    const loadedFonts = await Promise.all(fontFaces.map((font) => font.load()));
+    loadedFonts.forEach((font) => document.fonts.add(font));
+    await document.fonts.ready;
+  })();
+
+  return fontsReady;
+}
+
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Erro ao carregar imagem: ${src}`));
+    image.src = src;
+  });
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const paragraphs = text.split("\n");
+  const lines: string[] = [];
+
+  paragraphs.forEach((paragraph, paragraphIndex) => {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      if (paragraphIndex > 0) lines.push("");
+      return;
+    }
+
+    let currentLine = "";
+    words.forEach((word) => {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      if (ctx.measureText(testLine).width <= maxWidth || !currentLine) {
+        currentLine = testLine;
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
+    });
+
+    if (currentLine) lines.push(currentLine);
+  });
+
+  return lines;
+}
+
+function drawCenteredLines(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  x: number,
+  y: number,
+  lineHeight: number
+) {
+  lines.forEach((line, index) => {
+    if (!line) return;
+    ctx.fillText(line, x, y + index * lineHeight);
+  });
+}
+
+function setFont(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  family: string,
+  weight = "400"
+) {
+  ctx.font = `${weight} ${size}px "${family}", sans-serif`;
+}
+
+function fitCenteredText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  initialSize: number,
+  minSize: number,
+  family: string,
+  color: string,
+  weight = "400"
+) {
+  let fontSize = initialSize;
+  setFont(ctx, fontSize, family, weight);
+  while (fontSize > minSize && ctx.measureText(text).width > maxWidth) {
+    fontSize -= 2;
+    setFont(ctx, fontSize, family, weight);
+  }
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+function drawTextLayout(
+  ctx: CanvasRenderingContext2D,
+  certificate: CertificatePDFData
+) {
+  const template = getCertificateTemplate(certificate.type);
+  const title = getCertificateTitle(certificate.type, certificate.title);
+  const date = formatLongDate(certificate.issueDate);
+  const preName = template?.preName ?? "";
+  const bodyText = (template?.bodyText || certificate.description || "")
+    .replaceAll("[Nome]", certificate.recipientName)
+    .replaceAll("[Data]", date);
+  const verse = (template?.verse ?? "")
+    .replaceAll("[Nome]", certificate.recipientName)
+    .replaceAll("[Data]", date);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+
+  fitCenteredText(
+    ctx,
+    title,
+    CANVAS_WIDTH / 2,
+    295,
+    1350,
+    96,
+    62,
+    FONT_LAVANDERIA,
+    "#202020"
+  );
+
+  if (preName) {
+    setFont(ctx, 38, FONT_SANSATION, "400");
+    ctx.fillStyle = "#1f2933";
+    ctx.fillText(preName, CANVAS_WIDTH / 2, 430);
+  }
+
+  fitCenteredText(
+    ctx,
+    certificate.recipientName,
+    CANVAS_WIDTH / 2,
+    preName ? 545 : 485,
+    1320,
+    104,
+    58,
+    FONT_LAVANDERIA,
+    "#111111"
+  );
+
+  setFont(ctx, 36, FONT_SANSATION, "400");
+  ctx.fillStyle = "#1f2933";
+  const bodyLines = wrapText(ctx, bodyText, 1280);
+  const bodyStartY = preName ? 645 : 585;
+  drawCenteredLines(ctx, bodyLines, CANVAS_WIDTH / 2, bodyStartY, 48);
+
+  if (verse) {
+    setFont(ctx, 44, FONT_LAVANDERIA, "400");
+    ctx.fillStyle = "#1a1a1a";
+    const verseLines = wrapText(ctx, verse, 1380);
+    const verseY = Math.max(900, bodyStartY + bodyLines.length * 48 + 70);
+    drawCenteredLines(ctx, verseLines, CANVAS_WIDTH / 2, verseY, 54);
+  }
+
+  setFont(ctx, 18, FONT_SANSATION, "400");
+  ctx.fillStyle = "rgba(80,80,80,0.75)";
+  ctx.textAlign = "left";
+  ctx.fillText(`Registro: ${certificate.id}`, 80, CANVAS_HEIGHT - 58);
+}
+
+export async function renderCertificateDataUrl(certificate: CertificatePDFData) {
+  const template = getCertificateTemplate(certificate.type);
+  if (!template) {
+    throw new Error("Modelo de certificado inválido.");
+  }
+
+  await ensureCertificateFonts();
+
+  const canvas = document.createElement("canvas");
+  canvas.width = CANVAS_WIDTH;
+  canvas.height = CANVAS_HEIGHT;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas indisponível para gerar certificado.");
+
+  const background = await loadImage(template.backgroundPath);
+  ctx.drawImage(background, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  drawTextLayout(ctx, certificate);
+
+  return canvas.toDataURL("image/png");
+}
+
+export async function generateCertificatePDF(certificate: CertificatePDFData) {
+  const dataUrl = await renderCertificateDataUrl(certificate);
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const width = doc.internal.pageSize.getWidth();
   const height = doc.internal.pageSize.getHeight();
-  const certificateLabel = TYPE_LABELS[certificate.type] ?? certificate.title;
 
-  doc.setFillColor(250, 250, 250);
-  doc.rect(0, 0, width, height, "F");
-
-  doc.setDrawColor(0, 50, 117);
-  doc.setLineWidth(2);
-  doc.roundedRect(12, 12, width - 24, height - 24, 4, 4);
-
-  doc.setDrawColor(245, 183, 0);
-  doc.setLineWidth(0.8);
-  doc.roundedRect(18, 18, width - 36, height - 36, 3, 3);
-
-  doc.setFillColor(0, 50, 117);
-  doc.roundedRect(width / 2 - 26, 22, 52, 12, 3, 3, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.text("IEAB", width / 2, 30, { align: "center" });
-
-  doc.setTextColor(0, 50, 117);
-  doc.setFontSize(13);
-  doc.setFont("helvetica", "bold");
-  doc.text("IGREJA EVANGÉLICA AVIVAMENTO BÍBLICO", width / 2, 47, { align: "center" });
-
-  doc.setFontSize(28);
-  doc.setFont("helvetica", "bold");
-  doc.text(certificateLabel.toUpperCase(), width / 2, 66, { align: "center" });
-
-  doc.setDrawColor(245, 183, 0);
-  doc.setLineWidth(0.8);
-  doc.line(width / 2 - 44, 73, width / 2 + 44, 73);
-
-  doc.setTextColor(70, 70, 70);
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "normal");
-  doc.text("Concedemos o presente certificado a", width / 2, 91, { align: "center" });
-
-  doc.setTextColor(20, 20, 20);
-  doc.setFontSize(31);
-  doc.setFont("times", "bolditalic");
-  doc.text(certificate.recipientName, width / 2, 112, { align: "center" });
-
-  doc.setDrawColor(220, 220, 220);
-  doc.setLineWidth(0.4);
-  doc.line(width / 2 - 64, 118, width / 2 + 64, 118);
-
-  const defaultDescription =
-    certificate.eventDate
-      ? `Em reconhecimento ao registro de ${certificateLabel.toLowerCase()} realizado em ${formatLongDate(certificate.eventDate)}.`
-      : `Em reconhecimento ao registro de ${certificateLabel.toLowerCase()} emitido por esta comunidade.`;
-
-  doc.setTextColor(75, 75, 75);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(13);
-  const lines = doc.splitTextToSize(certificate.description || defaultDescription, 200);
-  doc.text(lines, width / 2, 135, { align: "center" });
-
-  doc.setFontSize(11);
-  doc.setTextColor(70, 70, 70);
-  doc.text(`Emitido em ${formatLongDate(certificate.issueDate)}`, width / 2, 154, {
-    align: "center",
-  });
-
-  doc.setDrawColor(0, 50, 117);
-  doc.setLineWidth(0.4);
-  doc.line(58, 178, 122, 178);
-  doc.line(width - 122, 178, width - 58, 178);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(20, 20, 20);
-  doc.text(certificate.issuerName || "Pastor Regional", 90, 185, { align: "center" });
-  doc.text("Secretaria", width - 90, 185, { align: "center" });
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(130, 130, 130);
-  doc.text(`Registro: ${certificate.id}`, width / 2, height - 18, { align: "center" });
-
+  doc.addImage(dataUrl, "PNG", 0, 0, width, height);
   doc.save(`Certificado_${sanitizeFileName(certificate.recipientName)}.pdf`);
 }

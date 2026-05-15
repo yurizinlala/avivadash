@@ -1,10 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  CERTIFICATE_TEMPLATE_IDS,
+  getCertificateTemplate,
+  getCertificateTitle,
+} from "@/lib/certificates";
 import { prisma } from "@/lib/prisma";
 import {
   certificateSchema,
+  certificateUpdateSchema,
   type CertificateFormData,
+  type CertificateUpdateData,
 } from "@/lib/validations/certificate";
 import {
   getPermissionErrorMessage,
@@ -12,6 +19,11 @@ import {
   requireRole,
   WRITE_ROLES,
 } from "@/lib/permissions";
+
+function revalidateCertificatePaths() {
+  revalidatePath("/relatorios");
+  revalidatePath("/relatorios/certificados");
+}
 
 function serializeCertificate(certificate: Awaited<ReturnType<typeof getCertificatePayload>>) {
   if (!certificate) return null;
@@ -45,6 +57,9 @@ export async function getCertificates() {
   await requireAuth();
 
   const certificates = await prisma.certificate.findMany({
+    where: {
+      type: { in: [...CERTIFICATE_TEMPLATE_IDS] },
+    },
     include: {
       person: {
         select: {
@@ -56,11 +71,12 @@ export async function getCertificates() {
       },
     },
     orderBy: { createdAt: "desc" },
-    take: 30,
+    take: 100,
   });
 
   return certificates.map((certificate) => ({
     ...certificate,
+    title: getCertificateTitle(certificate.type, certificate.title),
     issueDate: certificate.issueDate.toISOString(),
     eventDate: certificate.eventDate?.toISOString() ?? null,
     createdAt: certificate.createdAt.toISOString(),
@@ -78,22 +94,27 @@ export async function createCertificate(formData: CertificateFormData) {
     }
 
     const data = result.data;
+    const template = getCertificateTemplate(data.type);
+    if (!template) {
+      return { success: false, error: "Modelo de certificado inválido." };
+    }
+
     const personId = data.personId && data.personId !== "manual" ? data.personId : null;
 
     const certificate = await prisma.certificate.create({
       data: {
         type: data.type,
-        title: data.title.trim(),
+        title: template.title,
         recipientName: data.recipientName.trim(),
-        description: data.description?.trim() || null,
+        description: template.bodyText,
         issueDate: new Date(`${data.issueDate}T12:00:00Z`),
-        eventDate: data.eventDate ? new Date(`${data.eventDate}T12:00:00Z`) : null,
-        issuerName: data.issuerName?.trim() || null,
+        eventDate: null,
+        issuerName: null,
         personId,
       },
     });
 
-    revalidatePath("/relatorios");
+    revalidateCertificatePaths();
 
     const payload = await getCertificatePayload(certificate.id);
     return { success: true, certificate: serializeCertificate(payload) };
@@ -106,12 +127,46 @@ export async function createCertificate(formData: CertificateFormData) {
   }
 }
 
+export async function updateCertificate(formData: CertificateUpdateData) {
+  try {
+    await requireRole(WRITE_ROLES);
+
+    const result = certificateUpdateSchema.safeParse(formData);
+    if (!result.success) {
+      return { success: false, error: result.error.flatten().fieldErrors };
+    }
+
+    const data = result.data;
+    const personId = data.personId && data.personId !== "manual" ? data.personId : null;
+
+    await prisma.certificate.update({
+      where: { id: data.id },
+      data: {
+        recipientName: data.recipientName.trim(),
+        issueDate: new Date(`${data.issueDate}T12:00:00Z`),
+        personId,
+      },
+    });
+
+    revalidateCertificatePaths();
+
+    const payload = await getCertificatePayload(data.id);
+    return { success: true, certificate: serializeCertificate(payload) };
+  } catch (error) {
+    const permissionMessage = getPermissionErrorMessage(error);
+    if (permissionMessage) return { success: false, error: permissionMessage };
+
+    console.error("Error updating certificate:", error);
+    return { success: false, error: "Erro ao atualizar certificado." };
+  }
+}
+
 export async function deleteCertificate(id: string) {
   try {
     await requireRole(WRITE_ROLES);
 
     await prisma.certificate.delete({ where: { id } });
-    revalidatePath("/relatorios");
+    revalidateCertificatePaths();
 
     return { success: true };
   } catch (error) {
