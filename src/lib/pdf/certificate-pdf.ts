@@ -348,9 +348,9 @@ function drawTextLayout(
     CANVAS_WIDTH / 2,
     265,
     1580,
-    136,
+    148,
     74,
-    FONT_LAVANDERIA,
+    FONT_LAVANDERIA_PLAIN,
     titleColor
   );
 
@@ -366,9 +366,9 @@ function drawTextLayout(
     CANVAS_WIDTH / 2,
     preName ? 505 : 445,
     1450,
-    76,
-    48,
-    FONT_SANSATION,
+    96,
+    56,
+    FONT_LAVANDERIA_PLAIN,
     "#111111"
   );
 
@@ -378,7 +378,7 @@ function drawTextLayout(
     splitStyledParagraphs(bodySegments),
     CANVAS_WIDTH / 2,
     bodyStartY,
-    1620,
+    1540,
     46,
     18
   );
@@ -386,7 +386,7 @@ function drawTextLayout(
   if (verse) {
     setFont(ctx, 38, FONT_LAVANDERIA_PLAIN, "400");
     ctx.fillStyle = "#1a1a1a";
-    const verseLines = wrapText(ctx, verse, 1520);
+    const verseLines = wrapText(ctx, verse, 1440);
     const verseY = Math.max(835, bodyLayout.bottomY + 70);
     drawCenteredLines(ctx, verseLines, CANVAS_WIDTH / 2, verseY, 48);
   }
