@@ -73,12 +73,32 @@ model Person {
   ledCells Cell[]  @relation("CellLeader")
 
   // Metadata
-  notes     String?
-  photoUrl  String?
+  notes        String?
+  photoUrl     String?
+  certificates Certificate[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("people")
+}
+
+model Certificate {
+  id            String    @id @default(cuid())
+  type          String
+  title         String
+  recipientName String
+  description   String?
+  issueDate     DateTime
+  eventDate     DateTime?
+  issuerName    String?
+
+  personId String?
+  person   Person? @relation(fields: [personId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@map("people")
+  @@map("certificates")
 }
 
 model Cell {
