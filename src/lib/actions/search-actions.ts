@@ -9,6 +9,7 @@ interface SearchResult {
   subtitle: string;
   type: "person" | "cell" | "event";
   href: string;
+  photoUrl?: string | null;
 }
 
 export async function globalSearch(query: string): Promise<SearchResult[]> {
@@ -25,7 +26,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
       fullName: { contains: q, mode: "insensitive" },
     },
     take: 5,
-    select: { id: true, fullName: true, personType: true, phone: true },
+    select: { id: true, fullName: true, personType: true, phone: true, photoUrl: true },
   });
   for (const p of persons) {
     results.push({
@@ -34,6 +35,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
       subtitle: `${p.personType} ${p.phone ? `• ${p.phone}` : ""}`,
       type: "person",
       href: `/pessoas?search=${encodeURIComponent(p.fullName)}`,
+      photoUrl: p.photoUrl,
     });
   }
 

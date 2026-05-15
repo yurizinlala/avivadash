@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Search, Users, Network, Calendar, X, Loader2, ArrowRight } from "lucide-react";
 import { globalSearch } from "@/lib/actions/search-actions";
@@ -175,10 +176,23 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                               : "text-foreground hover:bg-surface-high"
                           }`}
                         >
-                          <div className={`icon-tile h-8 w-8 rounded-lg ${config.color}`}
-                          >
-                            <Icon className="h-4 w-4" />
-                          </div>
+                          {item.type === "person" && item.photoUrl ? (
+                            <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-primary/10">
+                              <Image
+                                src={item.photoUrl}
+                                alt={item.title}
+                                fill
+                                sizes="32px"
+                                unoptimized
+                                className="object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className={`icon-tile h-8 w-8 rounded-lg ${config.color}`}
+                            >
+                              <Icon className="h-4 w-4" />
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">
                               {item.title}

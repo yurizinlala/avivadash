@@ -19,6 +19,7 @@ export default async function CellMapPage() {
     },
     include: {
       _count: { select: { members: true } },
+      leader: { select: { photoUrl: true } },
     },
   });
 
@@ -43,6 +44,7 @@ export default async function CellMapPage() {
       id: c.id,
       name: c.name,
       leaderName: c.leaderName,
+      leaderPhotoUrl: c.leader?.photoUrl ?? null,
       address: [c.street, c.number, c.neighborhood, c.city, c.state, c.cep]
         .filter(Boolean)
         .join(", ") || null,

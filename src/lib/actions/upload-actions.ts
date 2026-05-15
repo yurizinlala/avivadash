@@ -87,6 +87,8 @@ export async function uploadPersonPhoto(personId: string, formData: FormData) {
     }
 
     revalidatePath("/pessoas");
+    revalidatePath("/celulas");
+    revalidatePath("/celulas/mapa");
     revalidatePath("/");
     return { success: true, photoUrl };
   } catch (error) {
@@ -121,6 +123,8 @@ export async function removePersonPhoto(personId: string) {
     }
 
     revalidatePath("/pessoas");
+    revalidatePath("/celulas");
+    revalidatePath("/celulas/mapa");
     revalidatePath("/");
     return { success: true };
   } catch (error) {

@@ -42,8 +42,11 @@ export async function getCells(search?: string) {
     where,
     include: {
       members: {
-        select: { id: true, fullName: true, personType: true },
+        select: { id: true, fullName: true, personType: true, photoUrl: true },
         take: 5,
+      },
+      leader: {
+        select: { id: true, fullName: true, photoUrl: true },
       },
       _count: { select: { members: true } },
     },
@@ -84,7 +87,10 @@ export async function getCellById(id: string) {
     where: { id },
     include: {
       members: {
-        select: { id: true, fullName: true, personType: true, phone: true },
+        select: { id: true, fullName: true, personType: true, phone: true, photoUrl: true },
+      },
+      leader: {
+        select: { id: true, fullName: true, photoUrl: true },
       },
       _count: { select: { members: true } },
     },

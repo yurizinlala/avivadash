@@ -6,7 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   Plus, MapPin, Clock, Search,
-  Loader2, Trash2, Users, Map, Edit3, User,
+  Loader2, Trash2, Users, Map as MapIcon, Edit3, User,
   Info, Check, Camera, Image as ImageIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,7 @@ interface PersonRow {
   cpf: string | null;
   birthDate: Date | null;
   personType: string;
+  photoUrl: string | null;
 }
 
 interface CellRow {
@@ -61,7 +62,8 @@ interface CellRow {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-  members: { id: string; fullName: string; personType: string }[];
+  members: { id: string; fullName: string; personType: string; photoUrl: string | null }[];
+  leader: { id: string; fullName: string; photoUrl: string | null } | null;
   _count: { members: number };
 }
 
@@ -76,6 +78,40 @@ const GRADIENT_COLORS = [
 
 function getInitials(name: string): string {
   return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function PersonAvatar({
+  name,
+  photoUrl,
+  className,
+  sizes = "32px",
+}: {
+  name: string;
+  photoUrl?: string | null;
+  className?: string;
+  sizes?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-xs font-bold text-primary",
+        className
+      )}
+    >
+      {photoUrl ? (
+        <Image
+          src={photoUrl}
+          alt={name}
+          fill
+          sizes={sizes}
+          unoptimized
+          className="object-cover"
+        />
+      ) : (
+        getInitials(name)
+      )}
+    </div>
+  );
 }
 
 function formatDateForInput(date: Date | null | undefined): string {
@@ -109,6 +145,18 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
   const [searchLeaderQuery, setSearchLeaderQuery] = useState("");
   const [leaderSearchOpen, setLeaderSearchOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const peopleById = React.useMemo(
+    () => new Map(people.map((person) => [person.id, person])),
+    [people]
+  );
+
+  const getLeaderPhotoUrl = React.useCallback(
+    (cell: CellRow) =>
+      cell.leader?.photoUrl ??
+      (cell.leaderId ? peopleById.get(cell.leaderId)?.photoUrl : null) ??
+      null,
+    [peopleById]
+  );
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -367,6 +415,11 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
     }
   }
 
+  const selectedLeaderPhotoUrl = selectedCell ? getLeaderPhotoUrl(selectedCell) : null;
+  const formLeaderPhotoUrl = formData.leaderId
+    ? peopleById.get(formData.leaderId)?.photoUrl ?? null
+    : null;
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -378,7 +431,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
             <Link
               href="/celulas/mapa" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface-high"
             >
-              <Map className="h-4 w-4" />
+              <MapIcon className="h-4 w-4" />
               Ver Mapa
             </Link>
             <Button
@@ -414,7 +467,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
         <MetricCard
           label="Total de células"
           value={stats.totalCells}
-          icon={Map}
+          icon={MapIcon}
           tone="gold"
           helper="Inclui ativas e inativas"
         />
@@ -429,7 +482,10 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
 
       {/* Cell Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {initialCells.map((cell, idx) => (
+        {initialCells.map((cell, idx) => {
+          const leaderPhotoUrl = getLeaderPhotoUrl(cell);
+
+          return (
           <div
             key={cell.id}
             onClick={() => {
@@ -477,9 +533,17 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                 <h3 className="text-lg font-heading font-bold text-foreground group-hover:text-primary transition-colors">
                   {cell.name}
                 </h3>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  Líder: <span className="font-medium text-foreground">{cell.leaderName}</span>
-                </p>
+                <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+                  <PersonAvatar
+                    name={cell.leaderName}
+                    photoUrl={leaderPhotoUrl}
+                    className="h-7 w-7 text-[10px]"
+                    sizes="28px"
+                  />
+                  <span>
+                    Líder: <span className="font-medium text-foreground">{cell.leaderName}</span>
+                  </span>
+                </div>
               </div>
 
               {/* Schedule & Address */}
@@ -502,10 +566,14 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
               <div className="pt-2.5 border-t border-border flex items-center justify-between">
                 <div className="flex items-center">
                   <div className="flex -space-x-1.5">
-                    {Array.from({ length: Math.min(3, cell._count.members) }).map((_, i) => (
-                      <div key={i} className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-primary/15 text-xs font-bold text-primary">
-                        {cell.members[i] ? getInitials(cell.members[i].fullName) : `M${i + 1}`}
-                      </div>
+                    {cell.members.slice(0, 3).map((member) => (
+                      <PersonAvatar
+                        key={member.id}
+                        name={member.fullName}
+                        photoUrl={member.photoUrl}
+                        className="h-6 w-6 border-2 border-card text-[10px]"
+                        sizes="24px"
+                      />
                     ))}
                   </div>
                   {cell._count.members > 0 && (
@@ -523,7 +591,8 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {/* Add New Cell Card */}
         <div
@@ -612,9 +681,17 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                     </h3>
                   </div>
                   <div className="grid grid-cols-2 gap-y-4 gap-x-6 bg-surface-high rounded-xl p-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Líder Relacional</p>
-                      <p className="text-sm font-medium">{selectedCell.leaderName}</p>
+                    <div className="col-span-2 flex items-center gap-3">
+                      <PersonAvatar
+                        name={selectedCell.leaderName}
+                        photoUrl={selectedLeaderPhotoUrl}
+                        className="h-10 w-10 text-sm"
+                        sizes="40px"
+                      />
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Líder Relacional</p>
+                        <p className="text-sm font-medium">{selectedCell.leaderName}</p>
+                      </div>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Telefone</p>
@@ -666,9 +743,12 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                     <div className="space-y-3">
                       {selectedCell.members.map((member) => (
                         <div key={member.id} className="flex items-center gap-3 p-3 rounded-xl bg-surface-high/50 border border-border/50">
-                          <div className="h-8 w-8 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center shrink-0">
-                            {getInitials(member.fullName)}
-                          </div>
+                          <PersonAvatar
+                            name={member.fullName}
+                            photoUrl={member.photoUrl}
+                            className="h-8 w-8"
+                            sizes="32px"
+                          />
                           <div>
                             <p className="text-sm font-medium text-foreground">{member.fullName}</p>
                             <p className="text-xs text-muted-foreground mt-0.5 capitalize">{member.personType.toLowerCase()}</p>
@@ -836,9 +916,12 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
                                   key={p.id}
                                   onClick={() => selectLeader(p)} className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
                                 >
-                                  <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-                                    {getInitials(p.fullName)}
-                                  </div>
+                                  <PersonAvatar
+                                    name={p.fullName}
+                                    photoUrl={p.photoUrl}
+                                    className="h-8 w-8"
+                                    sizes="32px"
+                                  />
                                   <div className="flex flex-col">
                                     <span className="text-sm font-medium">{p.fullName}</span>
                                     <span className="text-xs text-muted-foreground">
@@ -870,9 +953,12 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
 
                   {formData.leaderId ? (
                     <div className="p-4 bg-primary/5 rounded-xl border border-primary/20 flex items-start gap-4">
-                      <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shrink-0">
-                        {getInitials(formData.leaderName)}
-                      </div>
+                      <PersonAvatar
+                        name={formData.leaderName}
+                        photoUrl={formLeaderPhotoUrl}
+                        className="h-10 w-10 bg-primary/20 text-sm"
+                        sizes="40px"
+                      />
                       <div>
                         <p className="text-sm font-medium text-foreground">{formData.leaderName}</p>
                         <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">

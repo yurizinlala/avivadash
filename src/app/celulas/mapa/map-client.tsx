@@ -15,6 +15,7 @@ interface MapPageClientProps {
     id: string;
     name: string;
     leaderName: string;
+    leaderPhotoUrl: string | null;
     address: string | null;
     dayOfWeek: string | null;
     time: string | null;

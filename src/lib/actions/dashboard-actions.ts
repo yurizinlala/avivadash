@@ -9,6 +9,7 @@ interface PersonBirthday {
   birthDate: Date | null;
   personType: string;
   cellId: string | null;
+  photoUrl: string | null;
 }
 
 interface EventRow {
@@ -64,7 +65,7 @@ export async function getDashboardStats() {
     // Get all people for birthday check (SQLite has limited date functions)
     prisma.person.findMany({
       where: { birthDate: { not: null } },
-      select: { id: true, fullName: true, birthDate: true, personType: true, cellId: true },
+      select: { id: true, fullName: true, birthDate: true, personType: true, cellId: true, photoUrl: true },
     }),
     // Upcoming events
     prisma.event.findMany({
@@ -106,6 +107,7 @@ export async function getDashboardStats() {
         age,
         type: p.personType,
         initials,
+        photoUrl: p.photoUrl,
       };
     }),
     upcomingEvents: upcomingEvents.map((e: EventRow) => ({

@@ -20,6 +20,7 @@ interface CellMapData {
   id: string;
   name: string;
   leaderName: string;
+  leaderPhotoUrl: string | null;
   address: string | null;
   dayOfWeek: string | null;
   time: string | null;
@@ -439,7 +440,21 @@ export function CellMap({
                   </div>
                 )}
                 <p className="text-sm font-bold leading-tight text-foreground">{cell.name}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Líder: {cell.leaderName}</p>
+                <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                  {cell.leaderPhotoUrl && (
+                    <div className="relative h-6 w-6 shrink-0 overflow-hidden rounded-full bg-primary/10">
+                      <Image
+                        src={cell.leaderPhotoUrl}
+                        alt={cell.leaderName}
+                        fill
+                        sizes="24px"
+                        unoptimized
+                        className="object-cover"
+                      />
+                    </div>
+                  )}
+                  <span>Líder: {cell.leaderName}</span>
+                </div>
                 {(cell.dayOfWeek || cell.time) && (
                   <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Clock className="h-3.5 w-3.5 shrink-0" />

@@ -47,7 +47,7 @@ import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { maskPhone, maskCep, maskCpf } from "@/lib/masks";
 import { personSchema } from "@/lib/validations/person";
-import { uploadPersonPhoto } from "@/lib/actions/upload-actions";
+import { removePersonPhoto, uploadPersonPhoto } from "@/lib/actions/upload-actions";
 import { MetricCard, PageHeader } from "@/components/design-system";
 
 type PersonType = "MEMBRO" | "VISITANTE" | "CONGREGADO";
@@ -181,6 +181,7 @@ export function PessoasClient({
   }, [searchParams, router]);
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
+  const [removingPhoto, setRemovingPhoto] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [pendingDeleteId, setPendingDeleteId] = React.useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = React.useState(
@@ -404,6 +405,28 @@ export function PessoasClient({
       setDeleting(false);
       setDeleteDialogOpen(false);
       setPendingDeleteId(null);
+    }
+  }
+
+  async function handleRemovePhoto() {
+    if (!selectedPerson?.photoUrl || removingPhoto) return;
+
+    setRemovingPhoto(true);
+    try {
+      const result = await removePersonPhoto(selectedPerson.id);
+      if (result.success) {
+        toast.success("Foto excluída permanentemente.");
+        setSelectedPerson((current) =>
+          current ? { ...current, photoUrl: null } : current
+        );
+        router.refresh();
+      } else {
+        toast.error(result.error || "Erro ao remover a foto.");
+      }
+    } catch {
+      toast.error("Erro inesperado ao remover a foto.");
+    } finally {
+      setRemovingPhoto(false);
     }
   }
 
@@ -842,17 +865,40 @@ export function PessoasClient({
                             const result = await uploadPersonPhoto(selectedPerson.id, fd);
                             if (result.success) {
                               toast.success("Foto atualizada!");
+                              setSelectedPerson((current) =>
+                                current
+                                  ? { ...current, photoUrl: result.photoUrl ?? current.photoUrl }
+                                  : current
+                              );
                               router.refresh();
                             } else {
                               toast.error(result.error || "Erro ao enviar foto.");
                             }
+                            e.currentTarget.value = "";
                           }}
                         />
                       </label>
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground">Foto do Membro</p>
                       <p className="text-xs text-muted-foreground">Clique para alterar • JPG, PNG ou WebP • Máx. 2MB</p>
+                      {selectedPerson.photoUrl && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          className="mt-3 gap-2"
+                          disabled={removingPhoto}
+                          onClick={handleRemovePhoto}
+                        >
+                          {removingPhoto ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                          Excluir foto
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}

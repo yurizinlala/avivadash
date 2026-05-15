@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
+import Image from "next/image";
 import {
   AlertCircle,
   ArrowRight,
@@ -87,8 +88,19 @@ export default async function DashboardPage() {
               stats.birthdaysToday.map((person) => (
                 <div key={person.id} className="item-row flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                      {person.initials}
+                    <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                      {person.photoUrl ? (
+                        <Image
+                          src={person.photoUrl}
+                          alt={person.name}
+                          fill
+                          sizes="36px"
+                          unoptimized
+                          className="object-cover"
+                        />
+                      ) : (
+                        person.initials
+                      )}
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">

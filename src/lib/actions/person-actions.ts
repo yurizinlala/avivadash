@@ -132,11 +132,12 @@ export async function createPerson(formData: PersonFormData) {
         state: data.state || null,
         cellId: data.cellId && data.cellId !== "none" ? data.cellId : null,
         notes: data.notes || null,
-        photoUrl: data.photoUrl || null,
       },
     });
 
     revalidatePath("/pessoas");
+    revalidatePath("/celulas");
+    revalidatePath("/celulas/mapa");
     revalidatePath("/");
     return { success: true };
   } catch (e) {
@@ -184,11 +185,12 @@ export async function updatePerson(id: string, formData: PersonFormData) {
         state: data.state || null,
         cellId: data.cellId && data.cellId !== "none" ? data.cellId : null,
         notes: data.notes || null,
-        photoUrl: data.photoUrl || null,
       },
     });
 
     revalidatePath("/pessoas");
+    revalidatePath("/celulas");
+    revalidatePath("/celulas/mapa");
     revalidatePath("/");
     return { success: true };
   } catch (e) {
@@ -216,6 +218,8 @@ export async function deletePerson(id: string) {
     }
 
     revalidatePath("/pessoas");
+    revalidatePath("/celulas");
+    revalidatePath("/celulas/mapa");
     revalidatePath("/");
     return { success: true };
   } catch (e) {
@@ -250,7 +254,8 @@ export async function getPeopleSimple() {
       phone: true,
       cpf: true,
       birthDate: true,
-      personType: true
+      personType: true,
+      photoUrl: true
     },
     orderBy: { fullName: "asc" },
   });
