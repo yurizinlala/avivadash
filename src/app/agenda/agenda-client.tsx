@@ -339,6 +339,8 @@ export function AgendaClient({
     reuniao: "Reunião",
     congresso: "Congresso",
   };
+  const selectedEventTypeLabel =
+    eventTypeFilter === "todos" ? "Todos os tipos" : eventTypeLabel[eventTypeFilter];
 
   const locationSuggestions = getFilteredLocations();
 
@@ -653,7 +655,7 @@ export function AgendaClient({
           }
         >
           <SelectTrigger className="h-11 w-full rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20">
-            <SelectValue />
+            <SelectValue>{selectedEventTypeLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos os tipos</SelectItem>
@@ -1069,7 +1071,7 @@ export function AgendaClient({
                       onValueChange={(value) => updateEventField("type", value as EventFormData["type"])}
                     >
                       <SelectTrigger className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0">
-                        <SelectValue />
+                        <SelectValue>{eventTypeLabel[eventForm.type]}</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="culto">Culto</SelectItem>

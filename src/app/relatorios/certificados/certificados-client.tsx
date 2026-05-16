@@ -123,6 +123,19 @@ function matchPerson(person: CertificatePerson, query: string) {
     .some((value) => value!.toLowerCase().includes(normalizedQuery));
 }
 
+function getCertificateFilterLabel(type: string) {
+  const template = getCertificateTemplate(type);
+  if (!template) return "Certificado";
+  if (template.backgroundPath.includes("apresentacao-menino")) {
+    return "Certificado de Apresentação - Menino";
+  }
+  if (template.backgroundPath.includes("apresentacao-menina")) {
+    return "Certificado de Apresentação - Menina";
+  }
+
+  return template.title;
+}
+
 function PersonAvatar({ person, name }: { person?: CertificatePerson | CertificateRow["person"] | null; name: string }) {
   return (
     <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-xs font-bold text-primary">
@@ -175,6 +188,10 @@ export function CertificadosClient({ initialCertificates, people }: Certificados
   const selectedTemplate = selectedTemplateId
     ? getCertificateTemplate(selectedTemplateId)
     : null;
+  const selectedHistoryTypeLabel =
+    historyTypeFilter === "todos"
+      ? "Todos os tipos"
+      : getCertificateFilterLabel(historyTypeFilter);
   const selectedPerson = people.find((person) => person.id === formData.personId);
   const selectedEditPerson = people.find((person) => person.id === editFormData.personId);
 
@@ -393,13 +410,13 @@ export function CertificadosClient({ initialCertificates, people }: Certificados
           onValueChange={(value) => setHistoryTypeFilter(value ?? "todos")}
         >
           <SelectTrigger className="h-11 w-full rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20">
-            <SelectValue />
+            <SelectValue>{selectedHistoryTypeLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos os tipos</SelectItem>
             {CERTIFICATE_TEMPLATES.map((template) => (
               <SelectItem key={template.id} value={template.id}>
-                {template.title}
+                {getCertificateFilterLabel(template.id)}
               </SelectItem>
             ))}
           </SelectContent>
