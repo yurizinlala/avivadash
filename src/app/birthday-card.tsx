@@ -119,6 +119,14 @@ function normalizeWhatsappPhone(phone: string | null) {
   return digits.startsWith("55") ? digits : `55${digits}`;
 }
 
+function normalizeCardText(text: string) {
+  return text
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .replace(/([,.!?;:])(?=\S)/g, "$1 ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function getBirthdayDisplayName(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   const shortName = parts.length >= 2 ? parts.slice(0, 2).join(" ") : name.trim();
@@ -271,42 +279,13 @@ function drawLetterSpacedText(
   });
 }
 
-function wrapLetterSpacedText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number,
-  letterSpacing: number
-) {
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = "";
-
-  words.forEach((word) => {
-    const testLine = line ? `${line} ${word}` : word;
-    if (
-      !line ||
-      measureLetterSpacedText(ctx, testLine, letterSpacing) <= maxWidth
-    ) {
-      line = testLine;
-      return;
-    }
-
-    lines.push(line);
-    line = word;
-  });
-
-  if (line) lines.push(line);
-  return lines;
-}
-
-function fitLetterSpacedBlock(
+function fitTextBlock(
   ctx: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,
   maxHeight: number,
   initialSize: number,
   minSize: number,
-  letterSpacing: number,
   lineHeightRatio = 1.32
 ) {
   let size = initialSize;
@@ -315,7 +294,7 @@ function fitLetterSpacedBlock(
 
   while (size >= minSize) {
     ctx.font = `400 ${size}px "${FONT_SANSATION}", "DM Sans", Arial, sans-serif`;
-    lines = wrapLetterSpacedText(ctx, text, maxWidth, letterSpacing);
+    lines = wrapText(ctx, text, maxWidth);
     lineHeight = Math.round(size * lineHeightRatio);
     if (lines.length * lineHeight <= maxHeight) break;
     size -= 2;
@@ -324,17 +303,17 @@ function fitLetterSpacedBlock(
   return { lines, lineHeight };
 }
 
-function drawLetterSpacedLines(
+function drawTextLines(
   ctx: CanvasRenderingContext2D,
   lines: string[],
   x: number,
   y: number,
   lineHeight: number,
-  letterSpacing: number,
   align: CanvasTextAlign = "center"
 ) {
+  ctx.textAlign = align;
   lines.forEach((line, index) => {
-    drawLetterSpacedText(ctx, line, x, y + index * lineHeight, letterSpacing, align);
+    ctx.fillText(line, x, y + index * lineHeight);
   });
 }
 
@@ -426,6 +405,8 @@ async function generateBirthdayImage({
 
   const photoSrc = manualPhotoDataUrl || person.photoUrl;
   const displayName = getBirthdayDisplayName(person.name);
+  const normalizedMessage = normalizeCardText(message).toUpperCase();
+  const normalizedVerse = normalizeCardText(verse);
 
   if (format === "portrait") {
     await drawPolaroidPhoto(ctx, person, photoSrc, {
@@ -448,30 +429,29 @@ async function generateBirthdayImage({
     resetCanvasLetterSpacing(ctx);
 
     ctx.fillStyle = TEXT;
-    const portraitMessage = fitLetterSpacedBlock(
+    const portraitMessage = fitTextBlock(
       ctx,
-      message.toUpperCase(),
+      normalizedMessage,
       810,
       178,
       31,
       24,
-      2,
       1.36
     );
     ctx.font = `400 ${Math.round(portraitMessage.lineHeight / 1.36)}px "${FONT_SANSATION}", "DM Sans", Arial, sans-serif`;
-    drawLetterSpacedLines(
+    resetCanvasLetterSpacing(ctx);
+    drawTextLines(
       ctx,
       portraitMessage.lines,
       540,
       1394,
-      portraitMessage.lineHeight,
-      2
+      portraitMessage.lineHeight
     );
 
     ctx.fillStyle = GOLD;
     ctx.font = `400 44px "${FONT_SCRIPT_PLAIN}", "DM Sans", Arial, sans-serif`;
     resetCanvasLetterSpacing(ctx);
-    drawWrappedText(ctx, verse, 540, 1634, 810, 56);
+    drawWrappedText(ctx, normalizedVerse, 540, 1634, 810, 56);
   } else {
     await drawPolaroidPhoto(ctx, person, photoSrc, {
       x: 182,
@@ -484,7 +464,7 @@ async function generateBirthdayImage({
 
     ctx.fillStyle = TEXT;
     ctx.font = `700 34px "${FONT_SANSATION_BOLD}", "DM Sans", Arial, sans-serif`;
-    drawLetterSpacedText(ctx, "PARABÉNS!", 980, 292, 14);
+    drawLetterSpacedText(ctx, "PARABÉNS!", 925, 292, 14);
 
     ctx.fillStyle = GOLD;
     fitScriptText(ctx, displayName, 1060, 144, 78, 2);
@@ -493,31 +473,30 @@ async function generateBirthdayImage({
     resetCanvasLetterSpacing(ctx);
 
     ctx.fillStyle = TEXT;
-    const landscapeMessage = fitLetterSpacedBlock(
+    const landscapeMessage = fitTextBlock(
       ctx,
-      message.toUpperCase(),
+      normalizedMessage,
       980,
-      156,
+      136,
       31,
       23,
-      3,
       1.28
     );
     ctx.font = `400 ${Math.round(landscapeMessage.lineHeight / 1.28)}px "${FONT_SANSATION}", "DM Sans", Arial, sans-serif`;
-    drawLetterSpacedLines(
+    resetCanvasLetterSpacing(ctx);
+    drawTextLines(
       ctx,
       landscapeMessage.lines,
       750,
-      535,
+      565,
       landscapeMessage.lineHeight,
-      3,
       "left"
     );
 
     ctx.fillStyle = GOLD;
     ctx.font = `400 40px "${FONT_SCRIPT_PLAIN}", "DM Sans", Arial, sans-serif`;
     resetCanvasLetterSpacing(ctx);
-    drawWrappedText(ctx, verse, 750, 712, 980, 50, "left");
+    drawWrappedText(ctx, normalizedVerse, 750, 755, 980, 50, "left");
   }
 
   return new Promise<Blob>((resolve, reject) => {
