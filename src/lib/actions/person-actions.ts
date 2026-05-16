@@ -13,6 +13,48 @@ import {
 
 export type PersonWithCell = Awaited<ReturnType<typeof getPersons>>["data"][0];
 
+function buildChildCreateData(children: PersonFormData["children"]) {
+  return children.map((child) => {
+    if (child.childPersonId) {
+      return {
+        childPerson: { connect: { id: child.childPersonId } },
+      };
+    }
+
+    return {
+      manualName: child.manualName?.trim() || null,
+      manualBirthDate: child.manualBirthDate
+        ? new Date(`${child.manualBirthDate}T12:00:00Z`)
+        : null,
+    };
+  });
+}
+
+async function validateLinkedChildren(
+  children: PersonFormData["children"],
+  parentId?: string
+) {
+  const childPersonIds = Array.from(
+    new Set(children.map((child) => child.childPersonId).filter(Boolean))
+  ) as string[];
+
+  if (parentId && childPersonIds.includes(parentId)) {
+    return "A pessoa nÃ£o pode ser vinculada como filho dela mesma.";
+  }
+
+  if (childPersonIds.length === 0) return null;
+
+  const existing = await prisma.person.count({
+    where: { id: { in: childPersonIds } },
+  });
+
+  if (existing !== childPersonIds.length) {
+    return "Um dos filhos vinculados nÃ£o foi encontrado.";
+  }
+
+  return null;
+}
+
 export async function getPersons({
   search = "",
   type = "",
@@ -70,7 +112,18 @@ export async function getPersons({
   const [data, total] = await Promise.all([
     prisma.person.findMany({
       where,
-      include: { cell: { select: { id: true, name: true } } },
+      include: {
+        cell: { select: { id: true, name: true } },
+        churchLocation: { select: { id: true, name: true, type: true } },
+        children: {
+          include: {
+            childPerson: {
+              select: { id: true, fullName: true, birthDate: true, photoUrl: true },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+      },
       orderBy: { fullName: "asc" },
       skip: (safePage - 1) * safePageSize,
       take: safePageSize,
@@ -92,7 +145,18 @@ export async function getPersonById(id: string) {
 
   return prisma.person.findUnique({
     where: { id },
-    include: { cell: { select: { id: true, name: true } } },
+    include: {
+      cell: { select: { id: true, name: true } },
+      churchLocation: { select: { id: true, name: true, type: true } },
+      children: {
+        include: {
+          childPerson: {
+            select: { id: true, fullName: true, birthDate: true, photoUrl: true },
+          },
+        },
+        orderBy: { createdAt: "asc" },
+      },
+    },
   });
 }
 
@@ -107,6 +171,10 @@ export async function createPerson(formData: PersonFormData) {
     }
 
     const data = result.data;
+    const childError = await validateLinkedChildren(data.children);
+    if (childError) {
+      return { success: false, error: childError };
+    }
 
     await prisma.person.create({
       data: {
@@ -117,12 +185,13 @@ export async function createPerson(formData: PersonFormData) {
         birthDate: data.birthDate ? new Date(`${data.birthDate}T12:00:00Z`) : null,
         maritalStatus: data.maritalStatus || null,
         weddingDate: data.weddingDate ? new Date(`${data.weddingDate}T12:00:00Z`) : null,
-        profession: data.profession || null,
         personType: data.personType,
         memberStatus: data.memberStatus,
         isBaptized: data.isBaptized,
         baptismDate: data.baptismDate ? new Date(`${data.baptismDate}T12:00:00Z`) : null,
         conversionDate: data.conversionDate ? new Date(`${data.conversionDate}T12:00:00Z`) : null,
+        ecclesiasticalRole: data.ecclesiasticalRole,
+        churchLocationId: data.churchLocationId || null,
         cep: data.cep || null,
         street: data.street || null,
         number: data.number || null,
@@ -132,6 +201,9 @@ export async function createPerson(formData: PersonFormData) {
         state: data.state || null,
         cellId: data.cellId && data.cellId !== "none" ? data.cellId : null,
         notes: data.notes || null,
+        children: {
+          create: buildChildCreateData(data.children),
+        },
       },
     });
 
@@ -159,6 +231,10 @@ export async function updatePerson(id: string, formData: PersonFormData) {
     }
 
     const data = result.data;
+    const childError = await validateLinkedChildren(data.children, id);
+    if (childError) {
+      return { success: false, error: childError };
+    }
 
     await prisma.person.update({
       where: { id },
@@ -170,12 +246,13 @@ export async function updatePerson(id: string, formData: PersonFormData) {
         birthDate: data.birthDate ? new Date(`${data.birthDate}T12:00:00Z`) : null,
         maritalStatus: data.maritalStatus || null,
         weddingDate: data.weddingDate ? new Date(`${data.weddingDate}T12:00:00Z`) : null,
-        profession: data.profession || null,
         personType: data.personType,
         memberStatus: data.memberStatus,
         isBaptized: data.isBaptized,
         baptismDate: data.baptismDate ? new Date(`${data.baptismDate}T12:00:00Z`) : null,
         conversionDate: data.conversionDate ? new Date(`${data.conversionDate}T12:00:00Z`) : null,
+        ecclesiasticalRole: data.ecclesiasticalRole,
+        churchLocationId: data.churchLocationId || null,
         cep: data.cep || null,
         street: data.street || null,
         number: data.number || null,
@@ -185,6 +262,10 @@ export async function updatePerson(id: string, formData: PersonFormData) {
         state: data.state || null,
         cellId: data.cellId && data.cellId !== "none" ? data.cellId : null,
         notes: data.notes || null,
+        children: {
+          deleteMany: {},
+          create: buildChildCreateData(data.children),
+        },
       },
     });
 

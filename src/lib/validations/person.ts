@@ -26,6 +26,54 @@ const isNotFutureDate = (value: string) => {
   return new Date(`${value}T12:00:00Z`) <= today;
 };
 
+export const ECCLESIASTICAL_ROLES = [
+  "NENHUM",
+  "DIACONO",
+  "DIACONISA",
+  "PRESBITERO",
+  "MISSIONARIO",
+  "MISSIONARIA",
+  "PASTOR",
+  "PASTORA",
+  "EVANGELISTA",
+  "OBREIRO",
+  "OBREIRA",
+  "LIDER_CELULA",
+] as const;
+
+const personChildSchema = z.object({
+  childPersonId: z.string().optional().or(z.literal("")),
+  manualName: z.string().optional().or(z.literal("")),
+  manualBirthDate: z.string().optional().or(z.literal("")),
+}).superRefine((child, ctx) => {
+  if (child.childPersonId) return;
+
+  if (!child.manualName?.trim() || child.manualName.trim().length < 2) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Informe o nome do filho",
+      path: ["manualName"],
+    });
+  }
+
+  if (!child.manualBirthDate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Informe a data de nascimento do filho",
+      path: ["manualBirthDate"],
+    });
+  } else if (
+    !isValidDateString(child.manualBirthDate) ||
+    !isNotFutureDate(child.manualBirthDate)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Nascimento do filho nÃ£o pode ser futuro",
+      path: ["manualBirthDate"],
+    });
+  }
+});
+
 export const personSchema = z.object({
   fullName: z.string().min(2, "Nome deve ter pelo menos 2 caracteres").max(120, "Nome muito longo"),
   cpf: z.string().optional().or(z.literal("")).refine(val => !val || isValidCPF(val), "CPF inválido"),
@@ -34,12 +82,13 @@ export const personSchema = z.object({
   birthDate: z.string().optional().or(z.literal("")),
   maritalStatus: z.enum(["SOLTEIRO", "CASADO", "DIVORCIADO", "VIUVO"]).optional().or(z.literal("")),
   weddingDate: z.string().optional().or(z.literal("")),
-  profession: z.string().optional().or(z.literal("")),
   personType: z.enum(["MEMBRO", "VISITANTE", "CONGREGADO"]).default("VISITANTE"),
   memberStatus: z.enum(["ATIVO", "INATIVO", "TRANSFERIDO", "FALECIDO"]).default("ATIVO"),
   isBaptized: z.boolean().default(false),
   baptismDate: z.string().optional().or(z.literal("")),
   conversionDate: z.string().optional().or(z.literal("")),
+  ecclesiasticalRole: z.enum(ECCLESIASTICAL_ROLES).default("NENHUM"),
+  churchLocationId: z.string().optional().or(z.literal("")),
   cep: z.string().optional().or(z.literal("")).refine((value) => !value || value.replace(/\D/g, "").length === 8, "CEP deve ter 8 dígitos"),
   street: z.string().optional().or(z.literal("")),
   number: z.string().optional().or(z.literal("")),
@@ -50,6 +99,7 @@ export const personSchema = z.object({
   cellId: z.string().optional().or(z.literal("")),
   notes: z.string().max(1000, "Observações muito longas").optional().or(z.literal("")),
   photoUrl: z.string().optional().or(z.literal("")),
+  children: z.array(personChildSchema).default([]),
 }).superRefine((data, ctx) => {
   if (data.birthDate) {
     if (!isValidDateString(data.birthDate) || !isNotFutureDate(data.birthDate)) {
@@ -116,6 +166,32 @@ export const personSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: "Informe a data de batismo",
       path: ["baptismDate"],
+    });
+  }
+
+  if (data.ecclesiasticalRole !== "NENHUM") {
+    if (!data.isBaptized) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Cargo eclesiÃ¡stico exige pessoa batizada",
+        path: ["ecclesiasticalRole"],
+      });
+    }
+
+    if (!["MEMBRO", "CONGREGADO"].includes(data.personType)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Cargo eclesiÃ¡stico exige membro ou congregado",
+        path: ["ecclesiasticalRole"],
+      });
+    }
+  }
+
+  if (["MEMBRO", "CONGREGADO"].includes(data.personType) && !data.churchLocationId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Informe a igreja/local da pessoa",
+      path: ["churchLocationId"],
     });
   }
 

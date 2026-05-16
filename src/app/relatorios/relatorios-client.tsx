@@ -4,23 +4,23 @@ import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  AlertTriangle,
   Award,
   CheckCircle2,
   Clock,
   Download,
   FileText,
   Loader2,
+  Trash2,
   TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FieldError, MetricCard, PageHeader, SectionHeader } from "@/components/design-system";
-import { createReport } from "@/lib/actions/report-actions";
-import { generateReportPDF } from "@/lib/pdf/report-pdf";
+import { createReport, deleteReport } from "@/lib/actions/report-actions";
+import { generateConsolidatedReportPDF, generateReportPDF } from "@/lib/pdf/report-pdf";
+import { maskCurrency, parseCurrency } from "@/lib/masks";
 import { cn } from "@/lib/utils";
 import { reportSchema, type ReportFormData } from "@/lib/validations/report";
 
@@ -52,10 +52,10 @@ const EMPTY_REPORT_FORM: ReportFormState = {
   totalBaptisms: "0",
   totalConversions: "0",
   totalTransfers: "0",
-  totalTithes: "0",
-  totalOfferings: "0",
-  totalOtherIncome: "0",
-  totalExpenses: "0",
+  totalTithes: "R$ 0,00",
+  totalOfferings: "R$ 0,00",
+  totalOtherIncome: "R$ 0,00",
+  totalExpenses: "R$ 0,00",
   notes: "",
 };
 
@@ -66,6 +66,7 @@ interface RelatoriosClientProps {
 export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
+  const [deletingReportId, setDeletingReportId] = React.useState<string | null>(null);
   const [formData, setFormData] = React.useState<ReportFormState>(EMPTY_REPORT_FORM);
   const [formErrors, setFormErrors] = React.useState<Record<string, string[]>>({});
 
@@ -100,10 +101,10 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
       totalBaptisms: Number(formData.totalBaptisms || 0),
       totalConversions: Number(formData.totalConversions || 0),
       totalTransfers: Number(formData.totalTransfers || 0),
-      totalTithes: Number(formData.totalTithes || 0),
-      totalOfferings: Number(formData.totalOfferings || 0),
-      totalOtherIncome: Number(formData.totalOtherIncome || 0),
-      totalExpenses: Number(formData.totalExpenses || 0),
+      totalTithes: parseCurrency(formData.totalTithes),
+      totalOfferings: parseCurrency(formData.totalOfferings),
+      totalOtherIncome: parseCurrency(formData.totalOtherIncome),
+      totalExpenses: parseCurrency(formData.totalExpenses),
       notes: formData.notes,
     };
 
@@ -127,6 +128,30 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
       toast.error("Erro inesperado ao salvar.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDeleteReport(report: ReportRow) {
+    const month = new Date(report.referenceMonth).toLocaleDateString("pt-BR", {
+      month: "long",
+      year: "numeric",
+    });
+    const confirmed = window.confirm(`Excluir o relatÃ³rio de ${month}?`);
+    if (!confirmed) return;
+
+    setDeletingReportId(report.id);
+    try {
+      const result = await deleteReport(report.id);
+      if (result.success) {
+        toast.success("RelatÃ³rio excluÃ­do.");
+        router.refresh();
+      } else {
+        toast.error(result.error || "Erro ao excluir relatÃ³rio.");
+      }
+    } catch {
+      toast.error("Erro inesperado ao excluir.");
+    } finally {
+      setDeletingReportId(null);
     }
   }
 
@@ -182,17 +207,17 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
           <Button
             variant="outline"
             className="shrink-0 gap-2 border-white bg-white text-primary shadow-sm hover:bg-white/90 hover:text-primary"
-            onClick={() => {
-              if (latest) {
-                generateReportPDF(latest);
-                toast.success("PDF gerado com sucesso!");
+            onClick={async () => {
+              if (initialReports.length > 0) {
+                await generateConsolidatedReportPDF(initialReports);
+                toast.success("PDF consolidado gerado com sucesso!");
               } else {
                 toast.error("Nenhum relatório disponível para exportar.");
               }
             }}
           >
             <Download className="h-4 w-4" />
-            Gerar Relatório PDF
+            Gerar Consolidado
           </Button>
         </div>
       </div>
@@ -260,7 +285,7 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
                 <Label className="text-xs text-muted-foreground">
                   Total de Visitantes
@@ -289,20 +314,33 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                 />
                 <FieldError error={formErrors.totalBaptisms} />
               </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  Transferências
+                </Label>
+                <Input
+                  name="totalTransfers"
+                  type="number"
+                  min="0"
+                  value={formData.totalTransfers}
+                  onChange={(e) => updateField("totalTransfers", e.target.value)}
+                  className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalTransfers && "border border-destructive")}
+                />
+                <FieldError error={formErrors.totalTransfers} />
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <Label className="text-xs text-muted-foreground">
                   Dízimos (R$)
                 </Label>
                 <Input
                   name="totalTithes"
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   value={formData.totalTithes}
-                  onChange={(e) => updateField("totalTithes", e.target.value)}
+                  onChange={(e) => updateField("totalTithes", maskCurrency(e.target.value))}
                   className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalTithes && "border border-destructive")}
                 />
                 <FieldError error={formErrors.totalTithes} />
@@ -313,14 +351,27 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                 </Label>
                 <Input
                   name="totalOfferings"
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   value={formData.totalOfferings}
-                  onChange={(e) => updateField("totalOfferings", e.target.value)}
+                  onChange={(e) => updateField("totalOfferings", maskCurrency(e.target.value))}
                   className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalOfferings && "border border-destructive")}
                 />
                 <FieldError error={formErrors.totalOfferings} />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  Outras Receitas (R$)
+                </Label>
+                <Input
+                  name="totalOtherIncome"
+                  type="text"
+                  inputMode="decimal"
+                  value={formData.totalOtherIncome}
+                  onChange={(e) => updateField("totalOtherIncome", maskCurrency(e.target.value))}
+                  className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalOtherIncome && "border border-destructive")}
+                />
+                <FieldError error={formErrors.totalOtherIncome} />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">
@@ -328,19 +379,15 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                 </Label>
                 <Input
                   name="totalExpenses"
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   value={formData.totalExpenses}
-                  onChange={(e) => updateField("totalExpenses", e.target.value)}
+                  onChange={(e) => updateField("totalExpenses", maskCurrency(e.target.value))}
                   className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.totalExpenses && "border border-destructive")}
                 />
                 <FieldError error={formErrors.totalExpenses} />
               </div>
             </div>
-
-            <input type="hidden" name="totalTransfers" value={formData.totalTransfers} />
-            <input type="hidden" name="totalOtherIncome" value={formData.totalOtherIncome} />
 
             <div>
               <Label className="text-xs text-muted-foreground">Observações</Label>
@@ -382,11 +429,7 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                   return (
                     <div
                       key={report.id}
-                      className="item-row group flex cursor-pointer items-center gap-3"
-                      onClick={() => {
-                        generateReportPDF(report);
-                        toast.success("PDF gerado!");
-                      }}
+                      className="item-row group flex items-center gap-3"
                     >
                       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 shrink-0">
                         <FileText className="h-4 w-4 text-primary" />
@@ -403,25 +446,38 @@ export function RelatoriosClient({ initialReports }: RelatoriosClientProps) {
                       <div className={cn("flex h-6 w-6 items-center justify-center rounded-full shrink-0", balance >= 0 ? "bg-success/10" : "bg-destructive/10")}>
                         <CheckCircle2 className={cn("h-3.5 w-3.5", balance >= 0 ? "text-success" : "text-destructive")} />
                       </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="Baixar relatÃ³rio"
+                          onClick={async () => {
+                            await generateReportPDF(report);
+                            toast.success("PDF gerado!");
+                          }}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="destructive"
+                          aria-label="Excluir relatÃ³rio"
+                          disabled={deletingReportId === report.id}
+                          onClick={() => handleDeleteReport(report)}
+                        >
+                          {deletingReportId === report.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   );
                 })
               )}
-            </div>
-          </div>
-
-          <div className="app-card border-gold/20 bg-gold/10 p-5">
-            <Badge className="mb-3 rounded-md border-0 bg-gold/90 text-xs font-semibold uppercase text-primary">
-              Sincronizado com Sede Nacional
-            </Badge>
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 text-gold-muted shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-foreground">Lembrete Fiscal</p>
-                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  Todas as atas devem ser impressas e assinadas fisicamente pelo Pastor Regional e Secretário antes do envio digital definitivo à sede nacional.
-                </p>
-              </div>
             </div>
           </div>
         </div>

@@ -81,3 +81,21 @@ export async function createReport(formData: ReportFormData) {
     return { success: false, error: "Erro ao salvar relatório." };
   }
 }
+
+export async function deleteReport(id: string) {
+  try {
+    await requireRole(WRITE_ROLES);
+
+    await prisma.monthlyReport.delete({ where: { id } });
+
+    revalidatePath("/relatorios");
+    revalidatePath("/");
+    return { success: true };
+  } catch (e) {
+    const permissionMessage = getPermissionErrorMessage(e);
+    if (permissionMessage) return { success: false, error: permissionMessage };
+
+    console.error("Error deleting report:", e);
+    return { success: false, error: "Erro ao excluir relatÃ³rio." };
+  }
+}

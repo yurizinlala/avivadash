@@ -31,3 +31,23 @@ export function maskCpf(value: string): string {
   if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
+
+/** R$ 1.234,56 */
+export function maskCurrency(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  const cents = Number(digits || "0");
+  return (cents / 100).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+export function parseCurrency(value: string): number {
+  const normalized = value
+    .replace(/\s/g, "")
+    .replace("R$", "")
+    .replace(/\./g, "")
+    .replace(",", ".")
+    .replace(/[^\d.-]/g, "");
+  return normalized ? Number(normalized) : 0;
+}

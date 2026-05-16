@@ -7,6 +7,7 @@ import {
   Calendar,
   FileText,
   Network,
+  Sparkles,
   TrendingUp,
   UserPlus,
   Users,
@@ -21,17 +22,34 @@ import { getDashboardStats } from "@/lib/actions/dashboard-actions";
 import { getCurrentUser } from "@/lib/auth";
 import { BirthdayCard } from "./birthday-card";
 
+function getSaoPauloGreeting() {
+  const hour = Number(
+    new Intl.DateTimeFormat("pt-BR", {
+      hour: "2-digit",
+      hourCycle: "h23",
+      timeZone: "America/Sao_Paulo",
+    }).format(new Date())
+  );
+
+  if (hour < 12) return "Bom dia";
+  if (hour < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
 export default async function DashboardPage() {
   const stats = await getDashboardStats();
   const user = await getCurrentUser();
   const firstName = user?.name?.split(" ")[0] || "Líder";
 
+  const greeting = getSaoPauloGreeting();
+
   return (
     <div className="page-stack">
       <PageHeader
         eyebrow="Visão geral"
-        title={`Olá, ${firstName}`}
+        title={`${greeting}, ${firstName}!`}
         description="Acompanhe os principais sinais da comunidade, próximos eventos e pontos de cuidado pastoral."
+        icon={Sparkles}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

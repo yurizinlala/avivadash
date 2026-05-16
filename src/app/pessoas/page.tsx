@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
-import { getPersons, getPersonStats } from "@/lib/actions/person-actions";
+import { getPersons, getPeopleSimple, getPersonStats } from "@/lib/actions/person-actions";
 import { getCellsSimple } from "@/lib/actions/cell-actions";
+import { getChurchLocations } from "@/lib/actions/church-location-actions";
 import { PessoasClient } from "./pessoas-client";
 
 export default async function PessoasPage({
@@ -24,10 +25,12 @@ export default async function PessoasPage({
   const baptized = params.baptized ?? "";
   const cell = params.cell ?? "";
 
-  const [personsResult, stats, cells] = await Promise.all([
+  const [personsResult, stats, cells, churchLocations, people] = await Promise.all([
     getPersons({ search, type: tab, page, pageSize: 20, status, baptized, cell }),
     getPersonStats(),
     getCellsSimple(),
+    getChurchLocations(),
+    getPeopleSimple(),
   ]);
 
   return (
@@ -38,6 +41,8 @@ export default async function PessoasPage({
       totalPages={personsResult.totalPages}
       stats={stats}
       cells={cells}
+      churchLocations={churchLocations}
+      people={people}
       currentSearch={search}
       currentTab={tab}
       currentStatus={status}

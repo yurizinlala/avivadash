@@ -11,6 +11,7 @@ import {
   User,
   UserPlus,
   Church,
+  Baby,
   MapPin,
   Trash2,
   Loader2,
@@ -41,17 +42,31 @@ import {
 
 import { toast } from "sonner";
 import { createPerson, updatePerson, deletePerson } from "@/lib/actions/person-actions";
-import type { PersonFormData } from "@/lib/validations/person";
+import {
+  ECCLESIASTICAL_ROLES,
+  personSchema,
+  type PersonFormData,
+} from "@/lib/validations/person";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { maskPhone, maskCep, maskCpf } from "@/lib/masks";
-import { personSchema } from "@/lib/validations/person";
 import { removePersonPhoto, uploadPersonPhoto } from "@/lib/actions/upload-actions";
 import { MetricCard, PageHeader } from "@/components/design-system";
 
 type PersonType = "MEMBRO" | "VISITANTE" | "CONGREGADO";
 type PersonStatus = "ATIVO" | "INATIVO" | "TRANSFERIDO" | "FALECIDO";
 type MaritalStatus = "SOLTEIRO" | "CASADO" | "DIVORCIADO" | "VIUVO";
+type EcclesiasticalRole = (typeof ECCLESIASTICAL_ROLES)[number];
+type ChildMode = "existing" | "manual";
+
+interface PersonChildFormState {
+  key: string;
+  childPersonId: string;
+  manualName: string;
+  manualBirthDate: string;
+  search: string;
+  mode: ChildMode;
+}
 
 interface PersonFormState {
   fullName: string;
@@ -61,12 +76,15 @@ interface PersonFormState {
   birthDate: string;
   maritalStatus: MaritalStatus;
   weddingDate: string;
-  profession: string;
   personType: PersonType;
   memberStatus: PersonStatus;
   isBaptized: boolean;
   baptismDate: string;
   conversionDate: string;
+  ecclesiasticalRole: EcclesiasticalRole;
+  churchLocationId: string;
+  hasChildren: boolean;
+  children: PersonChildFormState[];
   cep: string;
   street: string;
   number: string;
@@ -87,12 +105,15 @@ interface PersonRow {
   birthDate: Date | null;
   maritalStatus: string | null;
   weddingDate: Date | null;
-  profession: string | null;
   personType: string;
   memberStatus: string;
   isBaptized: boolean;
   baptismDate: Date | null;
   conversionDate: Date | null;
+  ecclesiasticalRole: string;
+  churchLocationId: string | null;
+  churchLocation: { id: string; name: string; type: string } | null;
+  children: PersonChildRow[];
   cep: string | null;
   street: string | null;
   number: string | null;
@@ -108,6 +129,32 @@ interface PersonRow {
   cell: { id: string; name: string } | null;
 }
 
+interface PersonChildRow {
+  id: string;
+  childPersonId: string | null;
+  manualName: string | null;
+  manualBirthDate: Date | null;
+  childPerson: {
+    id: string;
+    fullName: string;
+    birthDate: Date | null;
+    photoUrl: string | null;
+  } | null;
+}
+
+interface PersonOption {
+  id: string;
+  fullName: string;
+  birthDate: Date | null;
+  photoUrl: string | null;
+}
+
+interface ChurchLocationOption {
+  id: string;
+  name: string;
+  type: string;
+}
+
 const TYPE_STYLES: Record<PersonType, string> = {
   MEMBRO: "bg-primary/10 text-primary",
   VISITANTE: "bg-gold/15 text-gold-muted dark:text-gold",
@@ -119,6 +166,21 @@ const STATUS_STYLES: Record<string, string> = {
   INATIVO: "bg-destructive/10 text-destructive",
   TRANSFERIDO: "bg-gold/15 text-gold-muted dark:text-gold",
   FALECIDO: "bg-muted text-muted-foreground",
+};
+
+const ECCLESIASTICAL_ROLE_LABELS: Record<EcclesiasticalRole, string> = {
+  NENHUM: "Nenhum",
+  DIACONO: "DiÃ¡cono",
+  DIACONISA: "Diaconisa",
+  PRESBITERO: "PresbÃ­tero",
+  MISSIONARIO: "MissionÃ¡rio",
+  MISSIONARIA: "MissionÃ¡ria",
+  PASTOR: "Pastor",
+  PASTORA: "Pastora",
+  EVANGELISTA: "Evangelista",
+  OBREIRO: "Obreiro",
+  OBREIRA: "Obreira",
+  LIDER_CELULA: "LÃ­der de CÃ©lula",
 };
 
 function getInitials(name: string): string {
@@ -143,6 +205,8 @@ interface PessoasClientProps {
   totalPages: number;
   stats: { total: number; membros: number; visitantes: number; congregados: number };
   cells: { id: string; name: string }[];
+  churchLocations: ChurchLocationOption[];
+  people: PersonOption[];
   currentSearch: string;
   currentTab: string;
   currentStatus: string;
@@ -157,6 +221,8 @@ export function PessoasClient({
   totalPages,
   stats,
   cells,
+  churchLocations,
+  people,
   currentSearch,
   currentTab,
   currentStatus,
@@ -186,6 +252,7 @@ export function PessoasClient({
   const [filtersOpen, setFiltersOpen] = React.useState(
     !!(currentStatus || currentBaptized || currentCell)
   );
+  const [openChildKey, setOpenChildKey] = React.useState<string | null>(null);
   const searchTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounced search
@@ -234,7 +301,34 @@ export function PessoasClient({
 
   const hasActiveFilters = !!(currentStatus || currentBaptized || currentCell);
 
-  const getInitialFormState = (person: PersonRow | null): PersonFormState => ({
+  const createEmptyChild = React.useCallback((): PersonChildFormState => ({
+    key: crypto.randomUUID(),
+    childPersonId: "",
+    manualName: "",
+    manualBirthDate: "",
+    search: "",
+    mode: "manual",
+  }), []);
+
+  const mapChildrenToForm = React.useCallback((person: PersonRow | null): PersonChildFormState[] =>
+    person?.children?.map((child) => {
+      const linkedName = child.childPerson?.fullName ?? "";
+      const manualName = child.manualName ?? "";
+      const displayName = linkedName || manualName;
+
+      return {
+        key: child.id,
+        childPersonId: child.childPersonId ?? "",
+        manualName,
+        manualBirthDate: formatDateForInput(
+          child.childPerson?.birthDate ?? child.manualBirthDate ?? null
+        ),
+        search: displayName,
+        mode: child.childPersonId ? "existing" : "manual",
+      };
+    }) ?? [], []);
+
+  const getInitialFormState = React.useCallback((person: PersonRow | null): PersonFormState => ({
     fullName: person?.fullName || "",
     cpf: person?.cpf || "",
     email: person?.email || "",
@@ -242,12 +336,15 @@ export function PessoasClient({
     birthDate: formatDateForInput(person?.birthDate ?? null) || "",
     maritalStatus: (person?.maritalStatus as MaritalStatus | null) || "SOLTEIRO",
     weddingDate: formatDateForInput(person?.weddingDate ?? null) || "",
-    profession: person?.profession || "",
     personType: (person?.personType as PersonType | null) || "VISITANTE",
     memberStatus: (person?.memberStatus as PersonStatus | null) || "ATIVO",
     isBaptized: person?.isBaptized ?? false,
     baptismDate: formatDateForInput(person?.baptismDate ?? null) || "",
     conversionDate: formatDateForInput(person?.conversionDate ?? null) || "",
+    ecclesiasticalRole: (person?.ecclesiasticalRole as EcclesiasticalRole | null) || "NENHUM",
+    churchLocationId: person?.churchLocationId || "",
+    hasChildren: Boolean(person?.children?.length),
+    children: mapChildrenToForm(person),
     cep: person?.cep || "",
     street: person?.street || "",
     number: person?.number || "",
@@ -257,7 +354,7 @@ export function PessoasClient({
     state: person?.state || "",
     cellId: person?.cellId || "",
     notes: person?.notes || "",
-  });
+  }), [mapChildrenToForm]);
 
   const [formData, setFormData] = React.useState<PersonFormState>(
     getInitialFormState(selectedPerson)
@@ -267,13 +364,32 @@ export function PessoasClient({
   React.useEffect(() => {
     setFormData(getInitialFormState(selectedPerson));
     setFormErrors({});
-  }, [selectedPerson]);
+    setOpenChildKey(null);
+  }, [getInitialFormState, selectedPerson]);
 
   const updateField = <K extends keyof PersonFormState>(
     field: K,
     value: PersonFormState[K]
   ) => {
-    const newData = { ...formData, [field]: value };
+    let newData: PersonFormState = { ...formData, [field]: value };
+
+    if (field === "personType" && value === "VISITANTE") {
+      newData = { ...newData, ecclesiasticalRole: "NENHUM", churchLocationId: "" };
+    }
+
+    if (field === "isBaptized" && value === false) {
+      newData = { ...newData, ecclesiasticalRole: "NENHUM", baptismDate: "" };
+    }
+
+    if (field === "hasChildren") {
+      newData = value
+        ? {
+            ...newData,
+            children: newData.children.length ? newData.children : [createEmptyChild()],
+          }
+        : { ...newData, children: [] };
+    }
+
     setFormData(newData);
     
     // Only parse if form is actively being edited
@@ -283,6 +399,62 @@ export function PessoasClient({
     } else {
       setFormErrors({});
     }
+  };
+
+  const getChildSuggestions = (child: PersonChildFormState) => {
+    const query = child.search.trim().toLowerCase();
+    if (query.length < 2) return [];
+
+    const selectedIds = new Set(
+      formData.children
+        .filter((item) => item.key !== child.key)
+        .map((item) => item.childPersonId)
+        .filter(Boolean)
+    );
+
+    return people
+      .filter((person) => {
+        if (selectedPerson?.id === person.id) return false;
+        if (selectedIds.has(person.id)) return false;
+        return person.fullName.toLowerCase().includes(query);
+      })
+      .slice(0, 5);
+  };
+
+  const updateChild = (
+    key: string,
+    patch: Partial<PersonChildFormState>
+  ) => {
+    const children = formData.children.map((child) =>
+      child.key === key ? { ...child, ...patch } : child
+    );
+    updateField("children", children);
+  };
+
+  const selectChildPerson = (key: string, person: PersonOption) => {
+    updateChild(key, {
+      childPersonId: person.id,
+      manualName: "",
+      manualBirthDate: formatDateForInput(person.birthDate),
+      search: person.fullName,
+      mode: "existing",
+    });
+    setOpenChildKey(null);
+  };
+
+  const addChild = () => {
+    const children = [...formData.children, createEmptyChild()];
+    setFormData((current) => ({ ...current, hasChildren: true, children }));
+  };
+
+  const removeChild = (key: string) => {
+    const children = formData.children.filter((child) => child.key !== key);
+    setFormData((current) => ({
+      ...current,
+      hasChildren: children.length > 0,
+      children,
+    }));
+    setOpenChildKey(null);
   };
 
   const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -326,12 +498,13 @@ export function PessoasClient({
       birthDate: formData.birthDate,
       maritalStatus: formData.maritalStatus || undefined,
       weddingDate: formData.weddingDate,
-      profession: formData.profession,
       personType: formData.personType || "VISITANTE",
       memberStatus: formData.memberStatus || "ATIVO",
       isBaptized: formData.isBaptized,
       baptismDate: formData.baptismDate,
       conversionDate: formData.conversionDate,
+      ecclesiasticalRole: formData.ecclesiasticalRole,
+      churchLocationId: formData.churchLocationId,
       cep: formData.cep,
       street: formData.street,
       number: formData.number,
@@ -341,6 +514,17 @@ export function PessoasClient({
       state: formData.state,
       cellId: formData.cellId === "none" ? "" : formData.cellId,
       notes: formData.notes,
+      children: formData.hasChildren
+        ? formData.children
+            .filter((child) =>
+              Boolean(child.childPersonId || child.manualName || child.manualBirthDate)
+            )
+            .map((child) => ({
+              childPersonId: child.childPersonId,
+              manualName: child.childPersonId ? "" : child.manualName,
+              manualBirthDate: child.childPersonId ? "" : child.manualBirthDate,
+            }))
+        : [],
     };
 
     const parsed = personSchema.safeParse(data);
@@ -1008,19 +1192,147 @@ export function PessoasClient({
                       {formErrors.weddingDate && <p className="text-destructive text-xs mt-1">{formErrors.weddingDate[0]}</p>}
                     </div>
                   </div>
-
-                  <div>
-                    <Label className={cn("text-xs text-muted-foreground", formErrors.profession && "text-destructive")}>
-                      Profissão
-                    </Label>
-                    <Input
-                      name="profession"
-                      placeholder="Ex: Engenheiro"
-                      value={formData.profession}
-                      onChange={(e) => updateField('profession', e.target.value)} className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20", formErrors.profession && "border border-destructive focus-visible:ring-destructive/20")}
-                    />
-                  </div>
                 </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-primary">
+                  <Baby className="h-4 w-4" />
+                  <h3 className="text-xs font-semibold uppercase tracking-widest">
+                    Filhos
+                  </h3>
+                </div>
+
+                <div className="flex items-center justify-between rounded-xl bg-surface-high p-4">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Possui filhos?</p>
+                    <p className="text-xs text-muted-foreground">
+                      Vincule filhos cadastrados ou informe nome e nascimento manualmente.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formData.hasChildren}
+                    onCheckedChange={(value) => updateField("hasChildren", value)}
+                  />
+                </div>
+
+                {formData.hasChildren && (
+                  <div className="space-y-3">
+                    {formData.children.map((child, index) => {
+                      const suggestions = getChildSuggestions(child);
+                      return (
+                        <div key={child.key} className="rounded-xl bg-surface-high p-3">
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_170px_auto] md:items-end">
+                            <div className="relative">
+                              <Label className="text-xs text-muted-foreground">
+                                Filho {index + 1}
+                              </Label>
+                              <div className="relative mt-1.5">
+                                <Input
+                                  value={child.search}
+                                  placeholder="Busque ou digite o nome..."
+                                  onFocus={() => setOpenChildKey(child.key)}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    updateChild(child.key, {
+                                      search: value,
+                                      manualName: value,
+                                      childPersonId: "",
+                                      mode: "manual",
+                                    });
+                                    setOpenChildKey(child.key);
+                                  }}
+                                  className="h-10 rounded-xl bg-background border-0 pl-10 focus-visible:ring-2 focus-visible:ring-primary/20"
+                                />
+                                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                              </div>
+
+                              {openChildKey === child.key && suggestions.length > 0 && (
+                                <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+                                  {suggestions.map((person) => (
+                                    <button
+                                      key={person.id}
+                                      type="button"
+                                      className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-surface-high"
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => selectChildPerson(child.key, person)}
+                                    >
+                                      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                                        {person.photoUrl ? (
+                                          <Image
+                                            src={person.photoUrl}
+                                            alt=""
+                                            fill
+                                            sizes="32px"
+                                            unoptimized
+                                            className="object-cover"
+                                          />
+                                        ) : (
+                                          getInitials(person.fullName)
+                                        )}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-medium text-foreground">
+                                          {person.fullName}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                          Pessoa cadastrada
+                                        </p>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <div>
+                              <Label className="text-xs text-muted-foreground">
+                                Nascimento
+                              </Label>
+                              <Input
+                                type="date"
+                                value={child.manualBirthDate}
+                                disabled={Boolean(child.childPersonId)}
+                                onChange={(e) =>
+                                  updateChild(child.key, { manualBirthDate: e.target.value })
+                                }
+                                className={cn(
+                                  "mt-1.5 h-10 rounded-xl bg-background border-0 focus-visible:ring-2 focus-visible:ring-primary/20",
+                                  child.childPersonId && "opacity-60"
+                                )}
+                              />
+                            </div>
+
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Remover filho"
+                              onClick={() => removeChild(child.key)}
+                              className="h-10 w-10 text-muted-foreground hover:text-destructive"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {formErrors.children && (
+                      <p className="text-xs text-destructive">{formErrors.children[0]}</p>
+                    )}
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={addChild}
+                      className="w-full gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Adicionar filho
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Dados Eclesiásticos */}
@@ -1123,6 +1435,58 @@ export function PessoasClient({
                     </div>
                   </div>
 
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.ecclesiasticalRole && "text-destructive")}>Cargo Eclesiástico</Label>
+                      <Select
+                        name="ecclesiasticalRole"
+                        value={formData.ecclesiasticalRole}
+                        onValueChange={(v) => updateField('ecclesiasticalRole', (v ?? "NENHUM") as EcclesiasticalRole)}
+                        disabled={!formData.isBaptized || formData.personType === "VISITANTE"}
+                      >
+                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.ecclesiasticalRole && "border border-destructive")}>
+                          <SelectValue>
+                            {ECCLESIASTICAL_ROLE_LABELS[formData.ecclesiasticalRole]}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ECCLESIASTICAL_ROLES.map((role) => (
+                            <SelectItem key={role} value={role}>
+                              {ECCLESIASTICAL_ROLE_LABELS[role]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {formErrors.ecclesiasticalRole && <p className="text-destructive text-xs mt-1">{formErrors.ecclesiasticalRole[0]}</p>}
+                    </div>
+
+                    <div>
+                      <Label className={cn("text-xs text-muted-foreground", formErrors.churchLocationId && "text-destructive")}>Igreja</Label>
+                      <Select
+                        name="churchLocationId"
+                        value={formData.churchLocationId || "none"}
+                        onValueChange={(v) => updateField('churchLocationId', v === "none" ? "" : v ?? "")}
+                      >
+                        <SelectTrigger className={cn("mt-1.5 h-10 rounded-xl bg-surface-high border-0 focus-visible:ring-0", formErrors.churchLocationId && "border border-destructive")}>
+                          <SelectValue placeholder="Selecione uma igreja">
+                            {formData.churchLocationId
+                              ? churchLocations.find((location) => location.id === formData.churchLocationId)?.name
+                              : "Nenhuma"}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Nenhuma</SelectItem>
+                          {churchLocations.map((location) => (
+                            <SelectItem key={location.id} value={location.id}>
+                              {location.type === "SEDE" ? "Sede" : "Congregação"} - {location.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {formErrors.churchLocationId && <p className="text-destructive text-xs mt-1">{formErrors.churchLocationId[0]}</p>}
+                    </div>
+                  </div>
                   <div>
                     <Label className={cn("text-xs text-muted-foreground", formErrors.cellId && "text-destructive")}>Célula</Label>
                     <Select

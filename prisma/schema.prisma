@@ -66,14 +66,16 @@ model Person {
   birthDate     DateTime?
   maritalStatus String? // SOLTEIRO | CASADO | DIVORCIADO | VIUVO
   weddingDate   DateTime?
-  profession    String?
   personType    String    @default("VISITANTE") // MEMBRO | VISITANTE | CONGREGADO
   memberStatus  String    @default("ATIVO") // ATIVO | INATIVO | TRANSFERIDO | FALECIDO
 
   // Ecclesiastical data
-  isBaptized     Boolean   @default(false)
-  baptismDate    DateTime?
-  conversionDate DateTime?
+  isBaptized        Boolean   @default(false)
+  baptismDate       DateTime?
+  conversionDate    DateTime?
+  ecclesiasticalRole String   @default("NENHUM")
+  churchLocationId  String?
+  churchLocation    ChurchLocation? @relation("PersonChurchLocation", fields: [churchLocationId], references: [id], onDelete: SetNull)
 
   // Address
   cep          String?
@@ -88,6 +90,8 @@ model Person {
   cellId   String?
   cell     Cell?   @relation("CellMember", fields: [cellId], references: [id])
   ledCells Cell[]  @relation("CellLeader")
+  children PersonChild[] @relation("PersonChildren")
+  childLinks PersonChild[] @relation("ChildPerson")
 
   // Metadata
   notes        String?
@@ -97,6 +101,23 @@ model Person {
   updatedAt    DateTime @updatedAt
 
   @@map("people")
+}
+
+model PersonChild {
+  id              String    @id @default(cuid())
+  parentId        String
+  parent          Person    @relation("PersonChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  childPersonId   String?
+  childPerson     Person?   @relation("ChildPerson", fields: [childPersonId], references: [id], onDelete: SetNull)
+  manualName      String?
+  manualBirthDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([childPersonId])
+  @@map("person_children")
 }
 
 model Certificate {
@@ -193,6 +214,7 @@ model ChurchLocation {
   state        String
 
   events Event[]
+  people Person[] @relation("PersonChurchLocation")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -8,6 +8,7 @@ interface PageHeaderProps {
   description?: string;
   actions?: ReactNode;
   className?: string;
+  icon?: LucideIcon;
 }
 
 export function PageHeader({
@@ -16,13 +17,21 @@ export function PageHeader({
   description,
   actions,
   className,
+  icon: Icon,
 }: PageHeaderProps) {
   return (
     <div className={cn("page-header", className)}>
-      <div>
-        <p className="page-eyebrow">{eyebrow}</p>
-        <h1 className="page-title">{title}</h1>
-        {description && <p className="page-subtitle">{description}</p>}
+      <div className="flex min-w-0 items-start gap-3">
+        {Icon && (
+          <span className="icon-tile icon-tile-primary mt-1">
+            <Icon className="h-4 w-4" />
+          </span>
+        )}
+        <div className="min-w-0">
+          <p className="page-eyebrow">{eyebrow}</p>
+          <h1 className="page-title">{title}</h1>
+          {description && <p className="page-subtitle">{description}</p>}
+        </div>
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>

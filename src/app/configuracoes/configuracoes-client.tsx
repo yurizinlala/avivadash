@@ -15,8 +15,6 @@ import {
   KeyRound,
   Loader2,
   Lock,
-  LogOut,
-  Mail,
   MapPin,
   Plus,
   Save,
@@ -31,7 +29,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { logout } from "@/lib/auth";
 import {
   createChurchLocation,
   deleteChurchLocation,
@@ -117,7 +114,6 @@ export function ConfiguracoesClient({
   const [showNew, setShowNew] = React.useState(false);
   const [showConfirm, setShowConfirm] = React.useState(false);
   const [savingPassword, setSavingPassword] = React.useState(false);
-  const [loggingOut, setLoggingOut] = React.useState(false);
   const [locationForm, setLocationForm] =
     React.useState<ChurchLocationFormData>(EMPTY_LOCATION_FORM);
   const [locationErrors, setLocationErrors] = React.useState<Record<string, string[]>>({});
@@ -418,18 +414,6 @@ export function ConfiguracoesClient({
       toast.error("Erro ao alterar senha.");
     } finally {
       setSavingPassword(false);
-    }
-  }
-
-  async function handleLogout() {
-    setLoggingOut(true);
-    try {
-      await logout();
-      router.push("/login");
-      router.refresh();
-    } catch {
-      toast.error("Erro ao sair da conta.");
-      setLoggingOut(false);
     }
   }
 
@@ -1029,76 +1013,6 @@ export function ConfiguracoesClient({
         </div>
 
         <aside className="space-y-6">
-          <section className="app-card overflow-hidden">
-            <div className="flex items-center gap-3 p-5 border-b border-border">
-              <div className="icon-tile icon-tile-info">
-                <Shield className="h-4 w-4" />
-              </div>
-              <div>
-                <h2 className="text-base font-heading font-semibold text-foreground">
-                  Acesso
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Permissões da conta atual
-                </p>
-              </div>
-            </div>
-            <div className="p-5 space-y-3 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">Perfil</span>
-                <span className="font-medium text-foreground">
-                  {roleLabel[user?.role ?? "ADMIN"] ?? user?.role}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">Conta</span>
-                <span className="font-medium text-success">Ativa</span>
-              </div>
-              <div className="flex items-center gap-2 rounded-xl bg-surface-high p-3">
-                <Mail className="h-4 w-4 text-primary shrink-0" />
-                <span className="truncate text-muted-foreground">
-                  {savedProfile.email || "Sem e-mail"}
-                </span>
-              </div>
-            </div>
-          </section>
-
-          <section className="app-card overflow-hidden">
-            <div className="flex items-center gap-3 p-5 border-b border-border">
-              <div className="icon-tile icon-tile-danger">
-                <LogOut className="h-4 w-4" />
-              </div>
-              <div>
-                <h2 className="text-base font-heading font-semibold text-foreground">
-                  Sessão
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Controle do acesso neste navegador
-                </p>
-              </div>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="rounded-xl bg-surface-high p-3 text-sm">
-                <p className="font-medium text-foreground">{savedProfile.name || "Usuário"}</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {savedProfile.email || "Conta autenticada"}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={handleLogout}
-                disabled={loggingOut} className="w-full gap-2"
-              >
-                {loggingOut ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-destructive/30 border-t-destructive" />
-                ) : (
-                  <LogOut className="h-4 w-4" />
-                )}
-                Sair da Conta
-              </Button>
-            </div>
-          </section>
 
           <section className="app-card overflow-hidden">
             <div className="flex items-center gap-3 p-5 border-b border-border">
