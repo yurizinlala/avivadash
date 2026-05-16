@@ -7,7 +7,6 @@ import {
   Users,
   Search,
   Plus,
-  Phone,
   MessageSquare,
   User,
   UserPlus,
@@ -696,7 +695,7 @@ export function PessoasClient({
                   </Badge>
                 </div>
 
-                {/* Phone */}
+                {/* WhatsApp */}
                 <span className="hidden md:block text-sm text-muted-foreground">
                   {person.phone || "—"}
                 </span>
@@ -721,29 +720,18 @@ export function PessoasClient({
                 {/* Actions */}
                 <div className="hidden md:flex items-center justify-end gap-1">
                   {person.phone && (
-                    <>
-                      <button className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-success/10 hover:text-success transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          window.open(
-                            `https://wa.me/55${person.phone!.replace(/\D/g, "")}`,
-                            "_blank"
-                          );
-                        }}
-                        aria-label={`Enviar WhatsApp para ${person.fullName}`}
-                      >
-                        <MessageSquare className="h-4 w-4" />
-                      </button>
-                      <button className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          window.open(`tel:${person.phone!.replace(/\D/g, "")}`, "_self");
-                        }}
-                        aria-label={`Ligar para ${person.fullName}`}
-                      >
-                        <Phone className="h-4 w-4" />
-                      </button>
-                    </>
+                    <button className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-success/10 hover:text-success transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(
+                          `https://wa.me/55${person.phone!.replace(/\D/g, "")}`,
+                          "_blank"
+                        );
+                      }}
+                      aria-label={`Enviar WhatsApp para ${person.fullName}`}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                    </button>
                   )}
                 </div>
               </div>

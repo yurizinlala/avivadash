@@ -3,7 +3,10 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import {
+  Bell,
   Building2,
+  Cake,
+  CalendarDays,
   CheckCircle2,
   Database,
   Edit3,
@@ -20,11 +23,13 @@ import {
   Shield,
   Trash2,
   User,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { logout } from "@/lib/auth";
 import {
@@ -33,12 +38,15 @@ import {
   updateChurchLocation,
 } from "@/lib/actions/church-location-actions";
 import { changePassword, updateProfile } from "@/lib/actions/settings-actions";
+import { updateNotificationSettings } from "@/lib/actions/notification-settings-actions";
 import { FieldError, PageHeader } from "@/components/design-system";
 import { maskCep } from "@/lib/masks";
 import {
   churchLocationSchema,
   type ChurchLocationFormData,
 } from "@/lib/validations/church-location";
+import type { NotificationSettingsDto } from "@/lib/notification-settings-service";
+import type { NotificationSettingsFormData } from "@/lib/validations/notification-settings";
 
 interface ConfiguracoesClientProps {
   user: {
@@ -48,6 +56,7 @@ interface ConfiguracoesClientProps {
     role: string;
   } | null;
   churchLocations: ChurchLocationRow[];
+  notificationSettings: NotificationSettingsDto;
 }
 
 interface ChurchLocationRow {
@@ -82,7 +91,11 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-export function ConfiguracoesClient({ user, churchLocations }: ConfiguracoesClientProps) {
+export function ConfiguracoesClient({
+  user,
+  churchLocations,
+  notificationSettings,
+}: ConfiguracoesClientProps) {
   const router = useRouter();
   const initialProfile = React.useMemo(
     () => ({
@@ -112,6 +125,29 @@ export function ConfiguracoesClient({ user, churchLocations }: ConfiguracoesClie
   const [savingLocation, setSavingLocation] = React.useState(false);
   const [deletingLocationId, setDeletingLocationId] = React.useState<string | null>(null);
   const [fetchingCep, setFetchingCep] = React.useState(false);
+  const initialNotificationSettings = React.useMemo<NotificationSettingsFormData>(
+    () => ({
+      birthdaysEnabled: notificationSettings.birthdaysEnabled,
+      birthdayLeadDays: notificationSettings.birthdayLeadDays,
+      eventsEnabled: notificationSettings.eventsEnabled,
+      eventLeadDays: notificationSettings.eventLeadDays,
+      visitorsEnabled: notificationSettings.visitorsEnabled,
+      visitorRecentDays: notificationSettings.visitorRecentDays,
+    }),
+    [
+      notificationSettings.birthdayLeadDays,
+      notificationSettings.birthdaysEnabled,
+      notificationSettings.eventLeadDays,
+      notificationSettings.eventsEnabled,
+      notificationSettings.visitorRecentDays,
+      notificationSettings.visitorsEnabled,
+    ]
+  );
+  const [notificationForm, setNotificationForm] =
+    React.useState<NotificationSettingsFormData>(initialNotificationSettings);
+  const [savedNotificationForm, setSavedNotificationForm] =
+    React.useState<NotificationSettingsFormData>(initialNotificationSettings);
+  const [savingNotifications, setSavingNotifications] = React.useState(false);
 
   React.useEffect(() => {
     setProfileName(initialProfile.name);
@@ -119,11 +155,18 @@ export function ConfiguracoesClient({ user, churchLocations }: ConfiguracoesClie
     setSavedProfile(initialProfile);
   }, [initialProfile]);
 
+  React.useEffect(() => {
+    setNotificationForm(initialNotificationSettings);
+    setSavedNotificationForm(initialNotificationSettings);
+  }, [initialNotificationSettings]);
+
   const normalizedProfileEmail = profileEmail.trim().toLowerCase();
   const profileChanged =
     profileName.trim() !== savedProfile.name ||
     normalizedProfileEmail !== savedProfile.email.toLowerCase();
   const passwordMatches = Boolean(confirmPassword && newPassword === confirmPassword);
+  const notificationsChanged =
+    JSON.stringify(notificationForm) !== JSON.stringify(savedNotificationForm);
 
   const roleLabel: Record<string, string> = {
     ADMIN: "Administrador",
@@ -147,6 +190,42 @@ export function ConfiguracoesClient({ user, churchLocations }: ConfiguracoesClie
       setLocationErrors(parsed.success ? {} : parsed.error.flatten().fieldErrors);
       return next;
     });
+  }
+
+  function updateNotificationField<K extends keyof NotificationSettingsFormData>(
+    field: K,
+    value: NotificationSettingsFormData[K]
+  ) {
+    setNotificationForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleSaveNotifications() {
+    setSavingNotifications(true);
+    try {
+      const result = await updateNotificationSettings(notificationForm);
+      if (result.success && "settings" in result && result.settings) {
+        const next = {
+          birthdaysEnabled: result.settings.birthdaysEnabled,
+          birthdayLeadDays: result.settings.birthdayLeadDays,
+          eventsEnabled: result.settings.eventsEnabled,
+          eventLeadDays: result.settings.eventLeadDays,
+          visitorsEnabled: result.settings.visitorsEnabled,
+          visitorRecentDays: result.settings.visitorRecentDays,
+        };
+        setNotificationForm(next);
+        setSavedNotificationForm(next);
+        toast.success("Preferências de notificação salvas.");
+        router.refresh();
+      } else if (typeof result.error === "object") {
+        toast.error("Revise os campos de notificação.");
+      } else {
+        toast.error(result.error || "Erro ao salvar notificações.");
+      }
+    } catch {
+      toast.error("Erro inesperado ao salvar notificações.");
+    } finally {
+      setSavingNotifications(false);
+    }
   }
 
   function resetLocationForm() {
@@ -579,6 +658,172 @@ export function ConfiguracoesClient({ user, churchLocations }: ConfiguracoesClie
                 </Button>
               </div>
             </form>
+          </section>
+
+          <section className="app-card overflow-hidden">
+            <div className="flex items-center gap-3 p-5 border-b border-border">
+              <div className="icon-tile icon-tile-primary">
+                <Bell className="h-4 w-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-heading font-semibold text-foreground">
+                  Notificações
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Escolha quais alertas aparecem no sino e com qual antecedência
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <div className="rounded-xl bg-surface-high p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="icon-tile icon-tile-gold">
+                        <Cake className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground">
+                          Aniversários
+                        </h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Avise antes e no dia do aniversário
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={notificationForm.birthdaysEnabled}
+                      onCheckedChange={(value) =>
+                        updateNotificationField("birthdaysEnabled", value)
+                      }
+                    />
+                  </div>
+                  <div className="mt-4">
+                    <Label className="text-xs text-muted-foreground">
+                      Dias de antecedência
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={notificationForm.birthdayLeadDays}
+                      onChange={(e) =>
+                        updateNotificationField(
+                          "birthdayLeadDays",
+                          Math.max(0, Math.min(30, Number(e.target.value || 0)))
+                        )
+                      }
+                      disabled={!notificationForm.birthdaysEnabled}
+                      className="mt-1.5 h-10 rounded-xl bg-background border-0"
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-surface-high p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="icon-tile icon-tile-info">
+                        <CalendarDays className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground">
+                          Eventos próximos
+                        </h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Destaque compromissos da agenda
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={notificationForm.eventsEnabled}
+                      onCheckedChange={(value) =>
+                        updateNotificationField("eventsEnabled", value)
+                      }
+                    />
+                  </div>
+                  <div className="mt-4">
+                    <Label className="text-xs text-muted-foreground">
+                      Dias de antecedência
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={notificationForm.eventLeadDays}
+                      onChange={(e) =>
+                        updateNotificationField(
+                          "eventLeadDays",
+                          Math.max(0, Math.min(30, Number(e.target.value || 0)))
+                        )
+                      }
+                      disabled={!notificationForm.eventsEnabled}
+                      className="mt-1.5 h-10 rounded-xl bg-background border-0"
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-surface-high p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="icon-tile icon-tile-success">
+                        <UserPlus className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground">
+                          Visitantes recentes
+                        </h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Acompanhe novos visitantes cadastrados
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={notificationForm.visitorsEnabled}
+                      onCheckedChange={(value) =>
+                        updateNotificationField("visitorsEnabled", value)
+                      }
+                    />
+                  </div>
+                  <div className="mt-4">
+                    <Label className="text-xs text-muted-foreground">
+                      Janela em dias
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={notificationForm.visitorRecentDays}
+                      onChange={(e) =>
+                        updateNotificationField(
+                          "visitorRecentDays",
+                          Math.max(1, Math.min(30, Number(e.target.value || 1)))
+                        )
+                      }
+                      disabled={!notificationForm.visitorsEnabled}
+                      className="mt-1.5 h-10 rounded-xl bg-background border-0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="brand"
+                  onClick={handleSaveNotifications}
+                  disabled={savingNotifications || !notificationsChanged}
+                  className="gap-2"
+                >
+                  {savingNotifications ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  Salvar Notificações
+                </Button>
+              </div>
+            </div>
           </section>
 
           <section className="app-card overflow-hidden">

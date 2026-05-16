@@ -136,7 +136,7 @@ export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, not
 
           {/* Notification Panel */}
           {showNotifications && (
-            <div className="app-card absolute right-0 top-full z-50 mt-2 w-[340px] overflow-hidden animate-in fade-in-0 slide-in-from-top-2 duration-200">
+            <div className="app-card absolute right-0 top-full z-50 mt-2 w-[min(calc(100vw-2rem),430px)] overflow-hidden animate-in fade-in-0 slide-in-from-top-2 duration-200">
               <div className="flex items-center justify-between p-4 border-b border-border">
                 <h3 className="text-sm font-heading font-semibold text-foreground">
                   Notificações
@@ -166,11 +166,11 @@ export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, not
                         <p className="text-xs font-medium text-foreground">
                           {notif.title}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        <p className="mt-0.5 whitespace-normal break-words text-xs leading-relaxed text-muted-foreground">
                           {notif.description}
                         </p>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex shrink-0 items-start gap-1">
                         <span className="text-xs text-muted-foreground/60">
                           {notif.time}
                         </span>

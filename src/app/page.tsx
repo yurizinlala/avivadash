@@ -1,14 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import Image from "next/image";
 import {
   AlertCircle,
   ArrowRight,
-  Cake,
   Calendar,
   FileText,
-  MessageSquare,
   Network,
   TrendingUp,
   UserPlus,
@@ -22,6 +19,7 @@ import {
 } from "@/components/design-system";
 import { getDashboardStats } from "@/lib/actions/dashboard-actions";
 import { getCurrentUser } from "@/lib/auth";
+import { BirthdayCard } from "./birthday-card";
 
 export default async function DashboardPage() {
   const stats = await getDashboardStats();
@@ -67,60 +65,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <AppCard>
-          <SectionHeader
-            icon={Cake}
-            title="Aniversariantes do dia"
-            description="Pessoas para celebrar e acompanhar hoje"
-            action={
-              <span className="rounded-full bg-gold/15 px-3 py-1 text-xs font-semibold text-gold-muted dark:text-gold">
-                Celebração
-              </span>
-            } className="mb-5"
-          />
-
-          <div className="space-y-3">
-            {stats.birthdaysToday.length === 0 ? (
-              <p className="rounded-lg bg-surface-low p-4 text-center text-sm text-muted-foreground">
-                Nenhum aniversariante hoje
-              </p>
-            ) : (
-              stats.birthdaysToday.map((person) => (
-                <div key={person.id} className="item-row flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                      {person.photoUrl ? (
-                        <Image
-                          src={person.photoUrl}
-                          alt={person.name}
-                          fill
-                          sizes="36px"
-                          unoptimized
-                          className="object-cover"
-                        />
-                      ) : (
-                        person.initials
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {person.name}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {person.age ? `${person.age} anos` : "Idade não informada"} · {person.type}
-                      </p>
-                    </div>
-                  </div>
-                  <button className="icon-tile icon-tile-success h-8 w-8 rounded-lg"
-                    aria-label={`Enviar mensagem para ${person.name}`}
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </AppCard>
+        <BirthdayCard people={stats.birthdaysToday} />
 
         <AppCard>
           <SectionHeader

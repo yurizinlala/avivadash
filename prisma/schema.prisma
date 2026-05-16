@@ -19,10 +19,27 @@ model User {
   passwordHash String
   name         String
   role         String   @default("ADMIN") // ADMIN | PASTOR | LIDER
+  notificationSettings UserNotificationSettings?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@map("users")
+}
+
+model UserNotificationSettings {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  birthdaysEnabled  Boolean  @default(true)
+  birthdayLeadDays  Int      @default(2)
+  eventsEnabled     Boolean  @default(true)
+  eventLeadDays     Int      @default(3)
+  visitorsEnabled   Boolean  @default(true)
+  visitorRecentDays Int      @default(7)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("user_notification_settings")
 }
 
 model StoredFile {
