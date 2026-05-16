@@ -153,11 +153,34 @@ model Event {
   type        String? // culto | reuniao | congresso
   isRecurrent Boolean  @default(false)
 
+  churchLocationId String?
+  churchLocation   ChurchLocation? @relation(fields: [churchLocationId], references: [id], onDelete: SetNull)
+
   // Metadata
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("events")
+}
+
+model ChurchLocation {
+  id           String @id @default(cuid())
+  name         String
+  type         String @default("CONGREGACAO") // SEDE | CONGREGACAO
+  cep          String?
+  street       String
+  number       String
+  complement   String?
+  neighborhood String
+  city         String
+  state        String
+
+  events Event[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("church_locations")
 }
 
 model MonthlyReport {

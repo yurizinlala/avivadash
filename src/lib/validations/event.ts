@@ -18,6 +18,7 @@ export const eventSchema = z.object({
     "Horário inválido"
   ),
   location: z.string().max(240, "Localização muito longa").optional().or(z.literal("")),
+  churchLocationId: z.string().optional().or(z.literal("")),
   type: z.enum(["culto", "reuniao", "congresso"]).default("culto"),
   isRecurrent: z.boolean().default(false),
 }).refine((data) => {

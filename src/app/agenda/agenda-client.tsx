@@ -51,15 +51,47 @@ interface EventRow {
   date: Date;
   time: string | null;
   location: string | null;
+  churchLocationId: string | null;
   type: string | null;
   isRecurrent: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
 
+interface CalendarEventOccurrence {
+  occurrenceId: string;
+  occurrenceKey: string;
+  occurrenceDate: Date;
+  event: EventRow;
+}
+
 function formatDateToKey(date: Date): string {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function parseDateKey(key: string): Date {
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function startOfWeek(date: Date) {
+  const start = new Date(date);
+  start.setDate(start.getDate() - start.getDay());
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function endOfDay(date: Date) {
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+  return end;
 }
 
 function formatDateForInput(date: Date | null): string {
@@ -76,6 +108,23 @@ interface AgendaClientProps {
     upcomingEvents: number;
   };
   cells?: { id: string; name: string; address: string | null }[];
+  churchLocations?: ChurchLocationRow[];
+}
+
+interface ChurchLocationRow {
+  id: string;
+  name: string;
+  type: string;
+  cep: string | null;
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string;
+  city: string;
+  state: string;
+  address: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface ManualLocationState {
@@ -95,6 +144,7 @@ interface EventFormState {
   time: string;
   type: EventFormData["type"];
   isRecurrent: boolean;
+  churchLocationId: string;
 }
 
 const EMPTY_MANUAL_LOCATION: ManualLocationState = {
@@ -114,9 +164,15 @@ const EMPTY_EVENT_FORM: EventFormState = {
   time: "",
   type: "culto",
   isRecurrent: false,
+  churchLocationId: "",
 };
 
-export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientProps) {
+export function AgendaClient({
+  initialEvents,
+  stats,
+  cells = [],
+  churchLocations = [],
+}: AgendaClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const today = new Date();
@@ -124,8 +180,11 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
   const [month, setMonth] = React.useState(today.getMonth());
   const [selDate, setSelDate] = React.useState<string | null>(null);
   const [viewMode, setViewMode] = React.useState<"Mês" | "Semana" | "Dia">("Mês");
+  const [eventSearch, setEventSearch] = React.useState("");
+  const [eventTypeFilter, setEventTypeFilter] = React.useState<"todos" | EventFormData["type"]>("todos");
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [selectedEvent, setSelectedEvent] = React.useState<EventRow | null>(null);
+  const [newEventDate, setNewEventDate] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
@@ -175,19 +234,20 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
           time: selectedEvent.time ?? "",
           type: (selectedEvent.type as EventFormData["type"]) ?? "culto",
           isRecurrent: selectedEvent.isRecurrent,
+          churchLocationId: selectedEvent.churchLocationId ?? "",
         });
         setSearchLocationQuery(selectedEvent.location ?? "");
         setIsManualLocation(false);
         setManualLocation({ ...EMPTY_MANUAL_LOCATION });
       } else {
-        setEventForm({ ...EMPTY_EVENT_FORM });
+        setEventForm({ ...EMPTY_EVENT_FORM, date: newEventDate ?? "" });
         setSearchLocationQuery("");
         setIsManualLocation(false);
         setManualLocation({ ...EMPTY_MANUAL_LOCATION });
       }
       setEventErrors({});
     }
-  }, [sheetOpen, selectedEvent]);
+  }, [newEventDate, sheetOpen, selectedEvent]);
 
   const validateEventForm = (data: EventFormState, location = searchLocationQuery) => {
     const parsed = eventSchema.safeParse({
@@ -248,31 +308,182 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
   };
 
   const getFilteredLocations = () => {
-    if (!searchLocationQuery) return cells;
     const lower = searchLocationQuery.toLowerCase();
-    return cells.filter((c) => c.name.toLowerCase().includes(lower));
+    const churchMatches = churchLocations.filter((location) =>
+      [location.name, location.address]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(lower))
+    );
+    const cellMatches = cells.filter((c) =>
+      [c.name, c.address]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(lower))
+    );
+
+    return { churchMatches, cellMatches };
   };
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay = new Date(year, month, 1).getDay();
-  const prev = () => {
-    if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1);
-  };
-  const next = () => {
-    if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1);
-  };
   const fmtKey = (d: number) =>
     `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  const evtsFor = (d: number) =>
-    initialEvents.filter((e) => formatDateToKey(e.date) === fmtKey(d));
   const isTdy = (d: number) =>
     d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+  const activeDate = selDate ? parseDateKey(selDate) : new Date(year, month, 1);
+  const activeDateKey = formatDateToKey(activeDate);
+  const weekStart = startOfWeek(activeDate);
+  const weekDays = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
 
-  const todayStr = formatDateToKey(today);
-  const upcoming = initialEvents
-    .filter((e) => formatDateToKey(e.date) >= todayStr)
-    .sort((a, b) => formatDateToKey(a.date).localeCompare(formatDateToKey(b.date)))
+  const eventTypeLabel: Record<EventFormData["type"], string> = {
+    culto: "Culto",
+    reuniao: "Reunião",
+    congresso: "Congresso",
+  };
+
+  const locationSuggestions = getFilteredLocations();
+
+  const setCalendarDate = (date: Date) => {
+    setYear(date.getFullYear());
+    setMonth(date.getMonth());
+    setSelDate(formatDateToKey(date));
+  };
+
+  const prev = () => {
+    if (viewMode === "Mês") {
+      if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1);
+      return;
+    }
+
+    setCalendarDate(addDays(activeDate, viewMode === "Semana" ? -7 : -1));
+  };
+
+  const next = () => {
+    if (viewMode === "Mês") {
+      if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1);
+      return;
+    }
+
+    setCalendarDate(addDays(activeDate, viewMode === "Semana" ? 7 : 1));
+  };
+
+  const openNewEventForDate = (dateKey: string) => {
+    const date = parseDateKey(dateKey);
+    setSelectedEvent(null);
+    setNewEventDate(dateKey);
+    setYear(date.getFullYear());
+    setMonth(date.getMonth());
+    setSelDate(dateKey);
+    setSheetOpen(true);
+  };
+
+  const getOccurrencesForRange = React.useCallback(
+    (rangeStart: Date, rangeEnd: Date): CalendarEventOccurrence[] => {
+      const normalizedStart = new Date(rangeStart);
+      normalizedStart.setHours(0, 0, 0, 0);
+      const normalizedEnd = endOfDay(rangeEnd);
+      const occurrences: CalendarEventOccurrence[] = [];
+
+      initialEvents.forEach((event) => {
+        const eventDate = new Date(event.date);
+        eventDate.setHours(0, 0, 0, 0);
+
+        if (!event.isRecurrent) {
+          if (eventDate >= normalizedStart && eventDate <= normalizedEnd) {
+            const occurrenceKey = formatDateToKey(eventDate);
+            occurrences.push({
+              occurrenceId: `${event.id}-${occurrenceKey}`,
+              occurrenceKey,
+              occurrenceDate: new Date(eventDate),
+              event,
+            });
+          }
+          return;
+        }
+
+        if (eventDate > normalizedEnd) return;
+
+        const diffDays = Math.max(
+          0,
+          Math.ceil((normalizedStart.getTime() - eventDate.getTime()) / 86400000)
+        );
+        const weeksToSkip = Math.floor(diffDays / 7);
+        let occurrenceDate = addDays(eventDate, weeksToSkip * 7);
+        while (occurrenceDate < normalizedStart) {
+          occurrenceDate = addDays(occurrenceDate, 7);
+        }
+
+        while (occurrenceDate <= normalizedEnd) {
+          const occurrenceKey = formatDateToKey(occurrenceDate);
+          occurrences.push({
+            occurrenceId: `${event.id}-${occurrenceKey}`,
+            occurrenceKey,
+            occurrenceDate: new Date(occurrenceDate),
+            event,
+          });
+          occurrenceDate = addDays(occurrenceDate, 7);
+        }
+      });
+
+      return occurrences.sort((a, b) => {
+        const dateCompare = a.occurrenceKey.localeCompare(b.occurrenceKey);
+        if (dateCompare !== 0) return dateCompare;
+        return (a.event.time ?? "").localeCompare(b.event.time ?? "");
+      });
+    },
+    [initialEvents]
+  );
+
+  const matchesFilters = (occurrence: CalendarEventOccurrence) => {
+    const event = occurrence.event;
+    const normalizedSearch = eventSearch.trim().toLowerCase();
+    const matchesType =
+      eventTypeFilter === "todos" || event.type === eventTypeFilter;
+    const matchesSearch =
+      !normalizedSearch ||
+      [event.title, event.description, event.location]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(normalizedSearch));
+
+    return matchesType && matchesSearch;
+  };
+
+  const monthOccurrences = React.useMemo(
+    () =>
+      getOccurrencesForRange(new Date(year, month, 1), new Date(year, month + 1, 0)).filter(
+        matchesFilters
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [eventSearch, eventTypeFilter, getOccurrencesForRange, month, year]
+  );
+  const weekOccurrences = React.useMemo(
+    () => getOccurrencesForRange(weekStart, addDays(weekStart, 6)).filter(matchesFilters),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeDateKey, eventSearch, eventTypeFilter, getOccurrencesForRange]
+  );
+  const dayOccurrences = React.useMemo(
+    () => getOccurrencesForRange(activeDate, activeDate).filter(matchesFilters),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeDateKey, eventSearch, eventTypeFilter, getOccurrencesForRange]
+  );
+  const evtsFor = (d: number) =>
+    monthOccurrences.filter((occurrence) => occurrence.occurrenceKey === fmtKey(d));
+
+  const upcoming = getOccurrencesForRange(today, addDays(today, 180))
+    .filter(matchesFilters)
     .slice(0, 4);
+  const viewTitle =
+    viewMode === "Mês"
+      ? `${MONTHS_PT[month]} ${year}`
+      : viewMode === "Semana"
+        ? `${weekStart.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} - ${addDays(weekStart, 6).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}`
+        : activeDate.toLocaleDateString("pt-BR", {
+            weekday: "long",
+            day: "2-digit",
+            month: "long",
+            year: "numeric",
+          });
+  const sedeLocation =
+    churchLocations.find((location) => location.type === "SEDE") ?? churchLocations[0];
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -318,6 +529,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
       date: eventForm.date,
       time: eventForm.time,
       location: finalLocation,
+      churchLocationId: isManualLocation ? "" : eventForm.churchLocationId,
       type: eventForm.type,
       isRecurrent: eventForm.isRecurrent,
     };
@@ -394,7 +606,11 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
               {(["Mês", "Semana", "Dia"] as const).map((m) => (
                 <button
                   key={m}
-                  onClick={() => setViewMode(m)} className={cn(
+                  type="button"
+                  onClick={() => {
+                    setViewMode(m);
+                    if (m !== "Mês" && !selDate) setCalendarDate(activeDate);
+                  }} className={cn(
                     "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
                     viewMode === m
                       ? "bg-card text-foreground shadow-sm"
@@ -409,6 +625,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
               variant="brand"
               onClick={() => {
                 setSelectedEvent(null);
+                setNewEventDate(selDate ?? "");
                 setSheetOpen(true);
               }}
             >
@@ -419,6 +636,34 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
         )}
       />
 
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_220px]">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={eventSearch}
+            onChange={(e) => setEventSearch(e.target.value)}
+            placeholder="Filtrar por nome, descrição ou local..."
+            className="h-11 rounded-xl bg-surface-high border-0 pl-10 focus-visible:ring-2 focus-visible:ring-primary/20"
+          />
+        </div>
+        <Select
+          value={eventTypeFilter}
+          onValueChange={(value) =>
+            setEventTypeFilter(value as "todos" | EventFormData["type"])
+          }
+        >
+          <SelectTrigger className="h-11 w-full rounded-xl bg-surface-high border-0 focus-visible:ring-2 focus-visible:ring-primary/20">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos os tipos</SelectItem>
+            <SelectItem value="culto">Culto</SelectItem>
+            <SelectItem value="reuniao">Reunião</SelectItem>
+            <SelectItem value="congresso">Congresso</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6">
         {/* Calendar Card */}
         <div className="app-card p-6">
@@ -426,7 +671,7 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-heading font-bold text-foreground">
-                {MONTHS_PT[month]} {year}
+                {viewTitle}
               </h2>
               <div className="flex items-center gap-1">
                 <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={prev}>
@@ -453,70 +698,172 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
             </div>
           </div>
 
-          {/* Weekday Headers */}
-          <div className="grid grid-cols-7 gap-1 mb-1">
-            {WEEKDAYS_PT.map((d) => (
-              <div
-                key={d} className="py-2 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-              >
-                {d}
+          {viewMode === "Mês" && (
+            <>
+              <div className="grid grid-cols-7 gap-1 mb-1">
+                {WEEKDAYS_PT.map((d) => (
+                  <div
+                    key={d} className="py-2 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                  >
+                    {d}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {/* Day Grid */}
-          <div className="grid grid-cols-7 gap-1">
-            {Array.from({ length: firstDay }).map((_, i) => (
-              <div key={`e-${i}`} className="h-24 rounded-lg" />
-            ))}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const day = i + 1;
-              const dk = fmtKey(day);
-              const de = evtsFor(day);
-              const it = isTdy(day);
-              const is = selDate === dk;
-              return (
-                <button
-                  key={day}
-                  onClick={() => setSelDate(is ? null : dk)} className={cn(
-                    "h-24 rounded-lg p-1.5 text-left transition-all duration-150 flex flex-col",
-                    it ? "bg-primary/8 ring-2 ring-primary" : "hover:bg-surface-low",
-                    is && !it && "bg-primary/10 ring-2 ring-primary/50"
-                  )}
-                >
-                  <span className={cn(
-                      "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
-                      it ? "bg-primary text-primary-foreground" : "text-foreground"
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({ length: firstDay }).map((_, i) => (
+                  <div key={`e-${i}`} className="h-24 rounded-lg" />
+                ))}
+                {Array.from({ length: daysInMonth }).map((_, i) => {
+                  const day = i + 1;
+                  const dk = fmtKey(day);
+                  const de = evtsFor(day);
+                  const it = isTdy(day);
+                  const is = selDate === dk;
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      onDoubleClick={() => openNewEventForDate(dk)}
+                      onClick={() => setSelDate(is ? null : dk)} className={cn(
+                        "h-24 rounded-lg p-1.5 text-left transition-all duration-150 flex flex-col",
+                        it ? "bg-primary/8 ring-2 ring-primary" : "hover:bg-surface-low",
+                        is && !it && "bg-primary/10 ring-2 ring-primary/50"
+                      )}
+                    >
+                      <span className={cn(
+                          "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
+                          it ? "bg-primary text-primary-foreground" : "text-foreground"
+                        )}
+                      >
+                        {day}
+                      </span>
+                      <div className="mt-auto space-y-0.5 overflow-hidden">
+                        {de.slice(0, 2).map((occurrence) => (
+                          <div
+                            key={occurrence.occurrenceId} className={cn(
+                              "cursor-pointer truncate rounded px-1 py-0.5 text-xs font-semibold leading-tight",
+                              TYPE_BG[occurrence.event.type ?? "culto"] ?? "bg-primary/15 text-primary"
+                            )}
+                            onDoubleClick={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEvent(occurrence.event);
+                              setSheetOpen(true);
+                            }}
+                          >
+                            {occurrence.event.title}
+                          </div>
+                        ))}
+                        {de.length > 2 && (
+                          <span className="px-1 text-xs text-muted-foreground">
+                            +{de.length - 2}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {viewMode === "Semana" && (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-7">
+              {weekDays.map((date, index) => {
+                const key = formatDateToKey(date);
+                const occurrences = weekOccurrences.filter((occurrence) => occurrence.occurrenceKey === key);
+                const isTodayDate = key === formatDateToKey(today);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setCalendarDate(date)}
+                    onDoubleClick={() => openNewEventForDate(key)}
+                    className={cn(
+                      "min-h-40 rounded-xl bg-surface-low p-3 text-left transition-colors hover:bg-surface-high",
+                      selDate === key && "ring-2 ring-primary/50",
+                      isTodayDate && "ring-2 ring-primary"
                     )}
                   >
-                    {day}
-                  </span>
-                  <div className="mt-auto space-y-0.5 overflow-hidden">
-                    {de.slice(0, 2).map((ev) => (
-                      <div
-                        key={ev.id} className={cn(
-                          "cursor-pointer truncate rounded px-1 py-0.5 text-xs font-semibold leading-tight",
-                          TYPE_BG[ev.type ?? "culto"] ?? "bg-primary/15 text-primary"
-                        )}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedEvent(ev);
-                          setSheetOpen(true);
-                        }}
-                      >
-                        {ev.title}
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                      {WEEKDAYS_PT[index]}
+                    </p>
+                    <p className="mt-1 text-lg font-heading font-bold text-foreground">
+                      {date.getDate()}
+                    </p>
+                    <div className="mt-4 space-y-2">
+                      {occurrences.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Sem eventos</p>
+                      ) : (
+                        occurrences.map((occurrence) => (
+                          <div
+                            key={occurrence.occurrenceId}
+                            className={cn(
+                              "rounded-lg px-2 py-1 text-xs font-semibold",
+                              TYPE_BG[occurrence.event.type ?? "culto"] ?? "bg-primary/15 text-primary"
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEvent(occurrence.event);
+                              setSheetOpen(true);
+                            }}
+                          >
+                            {occurrence.event.time ? `${occurrence.event.time} · ` : ""}
+                            {occurrence.event.title}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {viewMode === "Dia" && (
+            <div
+              className="min-h-96 rounded-xl bg-surface-low p-4"
+              onDoubleClick={() => openNewEventForDate(activeDateKey)}
+            >
+              {dayOccurrences.length === 0 ? (
+                <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
+                  Nenhum evento para este dia.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {dayOccurrences.map((occurrence) => (
+                    <div
+                      key={occurrence.occurrenceId}
+                      className="item-row cursor-pointer"
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      onClick={() => {
+                        setSelectedEvent(occurrence.event);
+                        setSheetOpen(true);
+                      }}
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <Badge className={cn("mb-2 border-0", TYPE_BG[occurrence.event.type ?? "culto"] ?? "bg-primary/15 text-primary")}>
+                            {eventTypeLabel[(occurrence.event.type as EventFormData["type"]) ?? "culto"] ?? "Evento"}
+                          </Badge>
+                          <h3 className="text-sm font-heading font-semibold text-foreground">
+                            {occurrence.event.title}
+                          </h3>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {occurrence.event.description || "Sem descrição."}
+                          </p>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {occurrence.event.time || "Horário a definir"}
+                        </div>
                       </div>
-                    ))}
-                    {de.length > 2 && (
-                      <span className="px-1 text-xs text-muted-foreground">
-                        +{de.length - 2}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Sidebar */}
@@ -537,11 +884,12 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                   Nenhum evento próximo
                 </p>
               ) : (
-                upcoming.map((ev) => {
-                  const evDate = new Date(ev.date);
+                upcoming.map((occurrence) => {
+                  const ev = occurrence.event;
+                  const evDate = occurrence.occurrenceDate;
                   return (
                     <div
-                      key={ev.id} className="space-y-1.5 cursor-pointer"
+                      key={occurrence.occurrenceId} className="space-y-1.5 cursor-pointer"
                       onClick={() => {
                         setSelectedEvent(ev);
                         setSheetOpen(true);
@@ -582,18 +930,38 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
           </div>
 
           {/* Location Card */}
-          <div className="rounded-xl overflow-hidden relative">
-            <div className="h-36 bg-gradient-to-br from-primary to-primary/70 relative">
-              <div className="absolute inset-0 bg-black/30" />
-              <div className="absolute bottom-0 left-0 right-0 p-4">
-                <p className="mb-1 text-xs uppercase tracking-widest text-white/60">
-                  Localização Sede
+          <div className="app-card overflow-hidden">
+            <div className="bg-gradient-to-br from-primary to-primary/75 p-5 text-white">
+              <p className="mb-1 text-xs uppercase tracking-widest text-white/65">
+                Locais da Igreja
+              </p>
+              <p className="text-base font-heading font-semibold">
+                {sedeLocation?.name ?? "Nenhum local cadastrado"}
+              </p>
+              {sedeLocation && (
+                <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-white/85">
+                  <Navigation className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {sedeLocation.address}
                 </p>
-                <p className="text-sm font-heading font-semibold text-white flex items-center gap-1.5">
-                  <Navigation className="h-3.5 w-3.5" />
-                  Av. Principal, 1000 — Centro
+              )}
+            </div>
+            <div className="space-y-3 p-4">
+              {churchLocations
+                .filter((location) => location.id !== sedeLocation?.id)
+                .slice(0, 3)
+                .map((location) => (
+                  <div key={location.id} className="rounded-xl bg-surface-high p-3">
+                    <p className="text-sm font-semibold text-foreground">{location.name}</p>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      {location.address}
+                    </p>
+                  </div>
+                ))}
+              {churchLocations.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Cadastre sede e congregações em Configurações.
                 </p>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -622,7 +990,13 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
       </div>
 
       {/* Sheet for Create/Edit Event */}
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+      <Sheet
+        open={sheetOpen}
+        onOpenChange={(open) => {
+          setSheetOpen(open);
+          if (!open) setNewEventDate(null);
+        }}
+      >
         <SheetContent className="w-full sm:max-w-md p-0 border-0 bg-card flex flex-col h-full">
           <SheetHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <div className="flex items-center justify-between">
@@ -772,11 +1146,12 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                       </Label>
                       <div className="relative mt-1.5">
                         <Input
-                          placeholder="Ex: Templo Central ou busque uma célula..."
+                          placeholder="Busque sede, congregação, célula ou informe um local..."
                           value={searchLocationQuery}
                           onChange={(e) => {
                             const value = e.target.value;
                             setSearchLocationQuery(value);
+                            updateEventField("churchLocationId", "");
                             validateEventForm(eventForm, value);
                             setLocationSearchOpen(true);
                           }}
@@ -793,30 +1168,34 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                                 Sugestões
                               </p>
                               
-                              {/* Option for Templo Central always shown if it matches query roughly */}
-                              <div
-                                onClick={() => {
-                                  setSearchLocationQuery("Templo Central");
-                                  validateEventForm(eventForm, "Templo Central");
-                                  setLocationSearchOpen(false);
-                                }} className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
-                              >
-                                <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-                                  TC
+                              {locationSuggestions.churchMatches.map((location) => (
+                                <div
+                                  key={location.id}
+                                  onClick={() => {
+                                    setSearchLocationQuery(location.name);
+                                    updateEventField("churchLocationId", location.id);
+                                    validateEventForm(eventForm, location.name);
+                                    setLocationSearchOpen(false);
+                                  }} className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
+                                >
+                                  <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                                    {location.type === "SEDE" ? "SE" : "CG"}
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-medium">{location.name}</span>
+                                    <span className="w-48 truncate text-xs text-muted-foreground">
+                                      {location.address}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-medium">Templo Central</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    Sede da Igreja
-                                  </span>
-                                </div>
-                              </div>
+                              ))}
 
-                              {getFilteredLocations().map((c) => (
+                              {locationSuggestions.cellMatches.map((c) => (
                                 <div
                                   key={c.id}
                                   onClick={() => {
                                     setSearchLocationQuery(c.name);
+                                    updateEventField("churchLocationId", "");
                                     validateEventForm(eventForm, c.name);
                                     setLocationSearchOpen(false);
                                   }} className="flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg hover:bg-surface-high transition-colors"
@@ -832,11 +1211,18 @@ export function AgendaClient({ initialEvents, stats, cells = [] }: AgendaClientP
                                   </div>
                                 </div>
                               ))}
+                              {locationSuggestions.churchMatches.length === 0 &&
+                                locationSuggestions.cellMatches.length === 0 && (
+                                  <p className="px-3 py-2 text-sm text-muted-foreground">
+                                    Nenhum local cadastrado encontrado.
+                                  </p>
+                                )}
                             </div>
                           </ScrollArea>
                           <div
                             onClick={() => {
                               setIsManualLocation(true);
+                              updateEventField("churchLocationId", "");
                               setLocationSearchOpen(false);
                             }} className="bg-surface-lowest p-3 border-t border-border flex items-center justify-between cursor-pointer hover:bg-surface-high transition-colors"
                           >

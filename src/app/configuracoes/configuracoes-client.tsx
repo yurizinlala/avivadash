@@ -3,16 +3,22 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import {
+  Building2,
   CheckCircle2,
   Database,
+  Edit3,
   Eye,
   EyeOff,
   KeyRound,
+  Loader2,
   Lock,
   LogOut,
   Mail,
+  MapPin,
+  Plus,
   Save,
   Shield,
+  Trash2,
   User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,8 +27,18 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { logout } from "@/lib/auth";
+import {
+  createChurchLocation,
+  deleteChurchLocation,
+  updateChurchLocation,
+} from "@/lib/actions/church-location-actions";
 import { changePassword, updateProfile } from "@/lib/actions/settings-actions";
-import { PageHeader } from "@/components/design-system";
+import { FieldError, PageHeader } from "@/components/design-system";
+import { maskCep } from "@/lib/masks";
+import {
+  churchLocationSchema,
+  type ChurchLocationFormData,
+} from "@/lib/validations/church-location";
 
 interface ConfiguracoesClientProps {
   user: {
@@ -31,13 +47,42 @@ interface ConfiguracoesClientProps {
     name: string;
     role: string;
   } | null;
+  churchLocations: ChurchLocationRow[];
 }
+
+interface ChurchLocationRow {
+  id: string;
+  name: string;
+  type: string;
+  cep: string | null;
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string;
+  city: string;
+  state: string;
+  address: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const EMPTY_LOCATION_FORM: ChurchLocationFormData = {
+  name: "",
+  type: "CONGREGACAO",
+  cep: "",
+  street: "",
+  number: "",
+  complement: "",
+  neighborhood: "",
+  city: "",
+  state: "RN",
+};
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-export function ConfiguracoesClient({ user }: ConfiguracoesClientProps) {
+export function ConfiguracoesClient({ user, churchLocations }: ConfiguracoesClientProps) {
   const router = useRouter();
   const initialProfile = React.useMemo(
     () => ({
@@ -60,6 +105,13 @@ export function ConfiguracoesClient({ user }: ConfiguracoesClientProps) {
   const [showConfirm, setShowConfirm] = React.useState(false);
   const [savingPassword, setSavingPassword] = React.useState(false);
   const [loggingOut, setLoggingOut] = React.useState(false);
+  const [locationForm, setLocationForm] =
+    React.useState<ChurchLocationFormData>(EMPTY_LOCATION_FORM);
+  const [locationErrors, setLocationErrors] = React.useState<Record<string, string[]>>({});
+  const [editingLocationId, setEditingLocationId] = React.useState<string | null>(null);
+  const [savingLocation, setSavingLocation] = React.useState(false);
+  const [deletingLocationId, setDeletingLocationId] = React.useState<string | null>(null);
+  const [fetchingCep, setFetchingCep] = React.useState(false);
 
   React.useEffect(() => {
     setProfileName(initialProfile.name);
@@ -84,6 +136,126 @@ export function ConfiguracoesClient({ user }: ConfiguracoesClientProps) {
     PASTOR: "Pode gerenciar cadastros, agenda, relatórios e células.",
     LIDER: "Pode acompanhar informações operacionais vinculadas à liderança.",
   };
+
+  function updateLocationField<K extends keyof ChurchLocationFormData>(
+    field: K,
+    value: ChurchLocationFormData[K]
+  ) {
+    setLocationForm((current) => {
+      const next = { ...current, [field]: value };
+      const parsed = churchLocationSchema.safeParse(next);
+      setLocationErrors(parsed.success ? {} : parsed.error.flatten().fieldErrors);
+      return next;
+    });
+  }
+
+  function resetLocationForm() {
+    setLocationForm(EMPTY_LOCATION_FORM);
+    setLocationErrors({});
+    setEditingLocationId(null);
+  }
+
+  function startEditLocation(location: ChurchLocationRow) {
+    setEditingLocationId(location.id);
+    setLocationForm({
+      name: location.name,
+      type: location.type === "SEDE" ? "SEDE" : "CONGREGACAO",
+      cep: location.cep ?? "",
+      street: location.street,
+      number: location.number,
+      complement: location.complement ?? "",
+      neighborhood: location.neighborhood,
+      city: location.city,
+      state: location.state,
+    });
+    setLocationErrors({});
+  }
+
+  async function handleLocationCepChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const masked = maskCep(e.target.value);
+    updateLocationField("cep", masked);
+
+    const cleanCep = masked.replace(/\D/g, "");
+    if (cleanCep.length !== 8) return;
+
+    setFetchingCep(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+      const data = await res.json();
+
+      if (data.erro) {
+        toast.error("CEP não encontrado.");
+        return;
+      }
+
+      setLocationForm((current) => ({
+        ...current,
+        street: data.logradouro || current.street,
+        neighborhood: data.bairro || current.neighborhood,
+        city: data.localidade || current.city,
+        state: data.uf || current.state,
+      }));
+    } catch {
+      toast.error("Erro ao buscar o CEP.");
+    } finally {
+      setFetchingCep(false);
+    }
+  }
+
+  async function handleSaveLocation(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    const parsed = churchLocationSchema.safeParse(locationForm);
+    if (!parsed.success) {
+      const fieldErrors = parsed.error.flatten().fieldErrors;
+      setLocationErrors(fieldErrors);
+      toast.error(Object.values(fieldErrors).flat()[0] || "Revise os campos do local.");
+      return;
+    }
+
+    setSavingLocation(true);
+    try {
+      const result = editingLocationId
+        ? await updateChurchLocation(editingLocationId, parsed.data)
+        : await createChurchLocation(parsed.data);
+
+      if (result.success) {
+        toast.success(editingLocationId ? "Local atualizado." : "Local cadastrado.");
+        resetLocationForm();
+        router.refresh();
+      } else if (typeof result.error === "object") {
+        setLocationErrors(result.error as Record<string, string[]>);
+        toast.error("Revise os campos do local.");
+      } else {
+        toast.error(result.error || "Erro ao salvar local.");
+      }
+    } catch {
+      toast.error("Erro inesperado ao salvar local.");
+    } finally {
+      setSavingLocation(false);
+    }
+  }
+
+  async function handleDeleteLocation(id: string) {
+    const confirmed = window.confirm("Excluir este local da igreja?");
+    if (!confirmed) return;
+
+    setDeletingLocationId(id);
+    try {
+      const result = await deleteChurchLocation(id);
+      if (result.success) {
+        toast.success("Local excluído.");
+        if (editingLocationId === id) resetLocationForm();
+        router.refresh();
+      } else {
+        toast.error(result.error || "Erro ao excluir local.");
+      }
+    } catch {
+      toast.error("Erro inesperado ao excluir local.");
+    } finally {
+      setDeletingLocationId(null);
+    }
+  }
 
   async function handleSaveProfile() {
     const trimmedName = profileName.trim();
@@ -407,6 +579,207 @@ export function ConfiguracoesClient({ user }: ConfiguracoesClientProps) {
                 </Button>
               </div>
             </form>
+          </section>
+
+          <section className="app-card overflow-hidden">
+            <div className="flex items-center gap-3 p-5 border-b border-border">
+              <div className="icon-tile icon-tile-success">
+                <Building2 className="h-4 w-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-heading font-semibold text-foreground">
+                  Locais da Igreja
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Cadastre sede e congregações usadas na agenda
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 p-5 lg:grid-cols-[1fr_1.1fr]">
+              <form onSubmit={handleSaveLocation} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_180px]">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Nome *</Label>
+                    <Input
+                      value={locationForm.name}
+                      onChange={(e) => updateLocationField("name", e.target.value)}
+                      placeholder="Ex: Sede"
+                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                    />
+                    <FieldError error={locationErrors.name} />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Tipo</Label>
+                    <select
+                      value={locationForm.type}
+                      onChange={(e) =>
+                        updateLocationField("type", e.target.value as ChurchLocationFormData["type"])
+                      }
+                      className="mt-1.5 h-10 w-full rounded-xl border-0 bg-surface-high px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="SEDE">Sede</option>
+                      <option value="CONGREGACAO">Congregação</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">CEP</Label>
+                    <div className="relative mt-1.5">
+                      <Input
+                        value={locationForm.cep ?? ""}
+                        onChange={handleLocationCepChange}
+                        placeholder="00000-000"
+                        className="h-10 rounded-xl bg-surface-high border-0 pr-9"
+                      />
+                      {fetchingCep && (
+                        <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-primary" />
+                      )}
+                    </div>
+                    <FieldError error={locationErrors.cep} />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Número *</Label>
+                    <Input
+                      value={locationForm.number}
+                      onChange={(e) => updateLocationField("number", e.target.value)}
+                      placeholder="Ex: 1161"
+                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                    />
+                    <FieldError error={locationErrors.number} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs text-muted-foreground">Rua/Avenida *</Label>
+                    <Input
+                      value={locationForm.street}
+                      onChange={(e) => updateLocationField("street", e.target.value)}
+                      placeholder="Ex: Rua Monte Rei"
+                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                    />
+                    <FieldError error={locationErrors.street} />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Complemento</Label>
+                    <Input
+                      value={locationForm.complement ?? ""}
+                      onChange={(e) => updateLocationField("complement", e.target.value)}
+                      placeholder="Ex: Sala 2"
+                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                    />
+                    <FieldError error={locationErrors.complement} />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Bairro *</Label>
+                    <Input
+                      value={locationForm.neighborhood}
+                      onChange={(e) => updateLocationField("neighborhood", e.target.value)}
+                      placeholder="Ex: Planalto"
+                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                    />
+                    <FieldError error={locationErrors.neighborhood} />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Cidade *</Label>
+                    <Input
+                      value={locationForm.city}
+                      onChange={(e) => updateLocationField("city", e.target.value)}
+                      placeholder="Ex: Natal"
+                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0"
+                    />
+                    <FieldError error={locationErrors.city} />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">UF *</Label>
+                    <Input
+                      value={locationForm.state}
+                      onChange={(e) =>
+                        updateLocationField("state", e.target.value.toUpperCase().slice(0, 2))
+                      }
+                      placeholder="RN"
+                      className="mt-1.5 h-10 rounded-xl bg-surface-high border-0 uppercase"
+                    />
+                    <FieldError error={locationErrors.state} />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  {editingLocationId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={resetLocationForm}
+                      className="flex-1"
+                    >
+                      Cancelar edição
+                    </Button>
+                  )}
+                  <Button type="submit" variant="brand" disabled={savingLocation} className="flex-1">
+                    {savingLocation ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    {editingLocationId ? "Salvar Local" : "Adicionar Local"}
+                  </Button>
+                </div>
+              </form>
+
+              <div className="space-y-3">
+                {churchLocations.length === 0 ? (
+                  <p className="rounded-xl bg-surface-high p-4 text-sm text-muted-foreground">
+                    Nenhum local cadastrado.
+                  </p>
+                ) : (
+                  churchLocations.map((location) => (
+                    <div key={location.id} className="rounded-xl bg-surface-high p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-sm font-semibold text-foreground">
+                              {location.name}
+                            </h3>
+                            <Badge variant="secondary">
+                              {location.type === "SEDE" ? "Sede" : "Congregação"}
+                            </Badge>
+                          </div>
+                          <p className="mt-2 flex gap-2 text-xs leading-relaxed text-muted-foreground">
+                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                            {location.address}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="Editar local"
+                            onClick={() => startEditLocation(location)}
+                          >
+                            <Edit3 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="destructive"
+                            aria-label="Excluir local"
+                            disabled={deletingLocationId === location.id}
+                            onClick={() => handleDeleteLocation(location.id)}
+                          >
+                            {deletingLocationId === location.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </section>
         </div>
 
