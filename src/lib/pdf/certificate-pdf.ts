@@ -445,15 +445,13 @@ function fitCenteredText(
 function measureTitle(
   ctx: CanvasRenderingContext2D,
   subject: string,
-  titleSize: number,
-  connectorSize: number
+  titleSize: number
 ) {
   const spacing = titleSize * 0.08;
 
   setFont(ctx, titleSize, FONT_LAVANDERIA_PLAIN);
   const prefixWidth = ctx.measureText("Certificado").width;
   const subjectWidth = ctx.measureText(subject).width;
-  setFont(ctx, connectorSize, FONT_SANSATION_BOLD, "700");
   const connectorWidth = ctx.measureText("de").width;
 
   return prefixWidth + connectorWidth + subjectWidth + spacing * 2;
@@ -486,13 +484,11 @@ function drawCertificateTitle(
   }
 
   let titleSize = initialSize;
-  let connectorSize = Math.round(titleSize * 0.42);
-  let totalWidth = measureTitle(ctx, match[1], titleSize, connectorSize);
+  let totalWidth = measureTitle(ctx, match[1], titleSize);
 
   while (titleSize > minSize && totalWidth > maxWidth) {
     titleSize -= 2;
-    connectorSize = Math.round(titleSize * 0.42);
-    totalWidth = measureTitle(ctx, match[1], titleSize, connectorSize);
+    totalWidth = measureTitle(ctx, match[1], titleSize);
   }
 
   const spacing = titleSize * 0.08;
@@ -504,8 +500,8 @@ function drawCertificateTitle(
   ctx.fillText("Certificado", currentX, y);
   currentX += ctx.measureText("Certificado").width + spacing;
 
-  setFont(ctx, connectorSize, FONT_SANSATION_BOLD, "700");
-  ctx.fillText("de", currentX, y - titleSize * 0.16);
+  setFont(ctx, titleSize, FONT_LAVANDERIA_PLAIN);
+  ctx.fillText("de", currentX, y);
   currentX += ctx.measureText("de").width + spacing;
 
   setFont(ctx, titleSize, FONT_LAVANDERIA_PLAIN);
