@@ -57,6 +57,7 @@ const FORMAT_CONFIG: Record<
 };
 
 const FONT_SCRIPT = "BirthdayLavanderia";
+const FONT_SCRIPT_PLAIN = "BirthdayLavanderiaPlain";
 const FONT_SANSATION = "BirthdaySansation";
 const FONT_SANSATION_BOLD = "BirthdaySansationBold";
 const GOLD = "#d2ad62";
@@ -118,6 +119,12 @@ function normalizeWhatsappPhone(phone: string | null) {
   return digits.startsWith("55") ? digits : `55${digits}`;
 }
 
+function getBirthdayDisplayName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const shortName = parts.length >= 2 ? parts.slice(0, 2).join(" ") : name.trim();
+  return `${shortName}!`;
+}
+
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new window.Image();
@@ -136,6 +143,13 @@ async function ensureBirthdayFonts() {
 
     const fontFaces = [
       new FontFace(FONT_SCRIPT, "url('/certificates/fonts/Lavanderia%20Sturdy.otf')"),
+      new FontFace(
+        FONT_SCRIPT_PLAIN,
+        "url('/certificates/fonts/Lavanderia%20Sturdy.otf')",
+        {
+          featureSettings: '"liga" 0, "clig" 0, "calt" 0, "swsh" 0, "salt" 0',
+        } as FontFaceDescriptors & { featureSettings: string }
+      ),
       new FontFace(FONT_SANSATION, "url('/certificates/fonts/Sansation-Regular.ttf')"),
       new FontFace(FONT_SANSATION_BOLD, "url('/certificates/fonts/Sansation-Bold.ttf')"),
     ];
@@ -187,6 +201,15 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
   return lines;
 }
 
+function setCanvasLetterSpacing(ctx: CanvasRenderingContext2D, letterSpacing: number) {
+  (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing =
+    `${letterSpacing}px`;
+}
+
+function resetCanvasLetterSpacing(ctx: CanvasRenderingContext2D) {
+  setCanvasLetterSpacing(ctx, 0);
+}
+
 function drawWrappedText(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -202,20 +225,20 @@ function drawWrappedText(
   });
 }
 
-function fitText(
+function fitScriptText(
   ctx: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,
   initialSize: number,
   minSize: number,
-  family = FONT_SANSATION_BOLD,
-  weight = "700"
+  letterSpacing: number
 ) {
   let size = initialSize;
-  ctx.font = `${weight} ${size}px "${family}", "DM Sans", Arial, sans-serif`;
+  setCanvasLetterSpacing(ctx, letterSpacing);
+  ctx.font = `400 ${size}px "${FONT_SCRIPT}", "DM Sans", Arial, sans-serif`;
   while (size > minSize && ctx.measureText(text).width > maxWidth) {
     size -= 2;
-    ctx.font = `${weight} ${size}px "${family}", "DM Sans", Arial, sans-serif`;
+    ctx.font = `400 ${size}px "${FONT_SCRIPT}", "DM Sans", Arial, sans-serif`;
   }
 }
 
@@ -276,17 +299,41 @@ function wrapLetterSpacedText(
   return lines;
 }
 
-function drawWrappedLetterSpacedText(
+function fitLetterSpacedBlock(
   ctx: CanvasRenderingContext2D,
   text: string,
+  maxWidth: number,
+  maxHeight: number,
+  initialSize: number,
+  minSize: number,
+  letterSpacing: number,
+  lineHeightRatio = 1.32
+) {
+  let size = initialSize;
+  let lineHeight = Math.round(size * lineHeightRatio);
+  let lines: string[] = [];
+
+  while (size >= minSize) {
+    ctx.font = `400 ${size}px "${FONT_SANSATION}", "DM Sans", Arial, sans-serif`;
+    lines = wrapLetterSpacedText(ctx, text, maxWidth, letterSpacing);
+    lineHeight = Math.round(size * lineHeightRatio);
+    if (lines.length * lineHeight <= maxHeight) break;
+    size -= 2;
+  }
+
+  return { lines, lineHeight };
+}
+
+function drawLetterSpacedLines(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
   x: number,
   y: number,
-  maxWidth: number,
   lineHeight: number,
   letterSpacing: number,
   align: CanvasTextAlign = "center"
 ) {
-  wrapLetterSpacedText(ctx, text, maxWidth, letterSpacing).forEach((line, index) => {
+  lines.forEach((line, index) => {
     drawLetterSpacedText(ctx, line, x, y + index * lineHeight, letterSpacing, align);
   });
 }
@@ -378,6 +425,7 @@ async function generateBirthdayImage({
   ctx.drawImage(background, 0, 0, config.width, config.height);
 
   const photoSrc = manualPhotoDataUrl || person.photoUrl;
+  const displayName = getBirthdayDisplayName(person.name);
 
   if (format === "portrait") {
     await drawPolaroidPhoto(ctx, person, photoSrc, {
@@ -391,28 +439,39 @@ async function generateBirthdayImage({
 
     ctx.fillStyle = TEXT;
     ctx.font = `700 34px "${FONT_SANSATION_BOLD}", "DM Sans", Arial, sans-serif`;
-    drawLetterSpacedText(ctx, "PARABÉNS", 540, 1130, 24);
+    drawLetterSpacedText(ctx, "PARABÉNS", 540, 1130, 12);
 
     ctx.fillStyle = GOLD;
-    fitText(ctx, person.name, 1040, 116, 66, FONT_SCRIPT, "400");
+    fitScriptText(ctx, displayName, 1060, 128, 74, 2);
     ctx.textAlign = "center";
-    ctx.fillText(person.name, 540, 1275);
+    ctx.fillText(displayName, 540, 1278);
+    resetCanvasLetterSpacing(ctx);
 
     ctx.fillStyle = TEXT;
-    ctx.font = `400 32px "${FONT_SANSATION}", "DM Sans", Arial, sans-serif`;
-    drawWrappedLetterSpacedText(
+    const portraitMessage = fitLetterSpacedBlock(
       ctx,
       message.toUpperCase(),
-      540,
-      1400,
       810,
-      43,
-      6
+      178,
+      31,
+      24,
+      2,
+      1.36
+    );
+    ctx.font = `400 ${Math.round(portraitMessage.lineHeight / 1.36)}px "${FONT_SANSATION}", "DM Sans", Arial, sans-serif`;
+    drawLetterSpacedLines(
+      ctx,
+      portraitMessage.lines,
+      540,
+      1394,
+      portraitMessage.lineHeight,
+      2
     );
 
     ctx.fillStyle = GOLD;
-    ctx.font = `400 38px "${FONT_SCRIPT}", "DM Sans", Arial, sans-serif`;
-    drawWrappedText(ctx, verse, 540, 1635, 780, 54);
+    ctx.font = `400 44px "${FONT_SCRIPT_PLAIN}", "DM Sans", Arial, sans-serif`;
+    resetCanvasLetterSpacing(ctx);
+    drawWrappedText(ctx, verse, 540, 1634, 810, 56);
   } else {
     await drawPolaroidPhoto(ctx, person, photoSrc, {
       x: 182,
@@ -425,29 +484,40 @@ async function generateBirthdayImage({
 
     ctx.fillStyle = TEXT;
     ctx.font = `700 34px "${FONT_SANSATION_BOLD}", "DM Sans", Arial, sans-serif`;
-    drawLetterSpacedText(ctx, "PARABÉNS!", 980, 292, 28);
+    drawLetterSpacedText(ctx, "PARABÉNS!", 980, 292, 14);
 
     ctx.fillStyle = GOLD;
-    fitText(ctx, person.name, 1040, 132, 72, FONT_SCRIPT, "400");
+    fitScriptText(ctx, displayName, 1060, 144, 78, 2);
     ctx.textAlign = "left";
-    ctx.fillText(person.name, 750, 455);
+    ctx.fillText(displayName, 750, 455);
+    resetCanvasLetterSpacing(ctx);
 
     ctx.fillStyle = TEXT;
-    ctx.font = `400 33px "${FONT_SANSATION}", "DM Sans", Arial, sans-serif`;
-    drawWrappedLetterSpacedText(
+    const landscapeMessage = fitLetterSpacedBlock(
       ctx,
       message.toUpperCase(),
-      750,
-      550,
       980,
-      40,
-      9,
+      156,
+      31,
+      23,
+      3,
+      1.28
+    );
+    ctx.font = `400 ${Math.round(landscapeMessage.lineHeight / 1.28)}px "${FONT_SANSATION}", "DM Sans", Arial, sans-serif`;
+    drawLetterSpacedLines(
+      ctx,
+      landscapeMessage.lines,
+      750,
+      535,
+      landscapeMessage.lineHeight,
+      3,
       "left"
     );
 
     ctx.fillStyle = GOLD;
-    ctx.font = `400 34px "${FONT_SCRIPT}", "DM Sans", Arial, sans-serif`;
-    drawWrappedText(ctx, verse, 750, 705, 980, 48, "left");
+    ctx.font = `400 40px "${FONT_SCRIPT_PLAIN}", "DM Sans", Arial, sans-serif`;
+    resetCanvasLetterSpacing(ctx);
+    drawWrappedText(ctx, verse, 750, 712, 980, 50, "left");
   }
 
   return new Promise<Blob>((resolve, reject) => {
