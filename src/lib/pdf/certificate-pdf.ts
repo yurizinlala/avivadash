@@ -34,7 +34,111 @@ type StyledWord = TextStyle & {
   text: string;
 };
 
+type CertificateLayout = {
+  titleY: number;
+  titleWidth: number;
+  titleSize: number;
+  titleMinSize: number;
+  preNameY: number;
+  nameYWithPreName: number;
+  nameYWithoutPreName: number;
+  nameWidth: number;
+  nameSize: number;
+  nameMinSize: number;
+  bodyYWithPreName: number;
+  bodyYWithoutPreName: number;
+  bodyCenterX: number;
+  bodyWidth: number;
+  bodyLineHeight: number;
+  paragraphGap: number;
+  verseCenterX: number;
+  verseWidth: number;
+  verseMinY: number;
+  verseGap: number;
+  verseLineHeight: number;
+  secondParagraphStyle?: TextStyle;
+};
+
 let fontsReady: Promise<void> | null = null;
+
+const DEFAULT_LAYOUT: CertificateLayout = {
+  titleY: 265,
+  titleWidth: 1580,
+  titleSize: 148,
+  titleMinSize: 74,
+  preNameY: 390,
+  nameYWithPreName: 505,
+  nameYWithoutPreName: 445,
+  nameWidth: 1450,
+  nameSize: 96,
+  nameMinSize: 56,
+  bodyYWithPreName: 610,
+  bodyYWithoutPreName: 550,
+  bodyCenterX: CANVAS_WIDTH / 2,
+  bodyWidth: 1540,
+  bodyLineHeight: 46,
+  paragraphGap: 18,
+  verseCenterX: CANVAS_WIDTH / 2,
+  verseWidth: 1440,
+  verseMinY: 835,
+  verseGap: 70,
+  verseLineHeight: 48,
+};
+
+const MINISTERIAL_CERTIFICATE_TYPES = new Set([
+  "Diácono",
+  "Diaconisa",
+  "Presbitero",
+  "Missionária",
+]);
+
+const PRESENTATION_CERTIFICATE_TYPES = new Set([
+  "Apresentação Menino",
+  "Apresentação Menina",
+]);
+
+function getCertificateLayout(type: string): CertificateLayout {
+  if (MINISTERIAL_CERTIFICATE_TYPES.has(type)) {
+    return {
+      ...DEFAULT_LAYOUT,
+      titleY: 320,
+      preNameY: 435,
+      nameYWithPreName: 545,
+      bodyYWithPreName: 665,
+      paragraphGap: 60,
+      bodyLineHeight: 48,
+      secondParagraphStyle: {
+        family: FONT_LAVANDERIA_PLAIN,
+        size: 34,
+        color: "#1f2933",
+        weight: "400",
+      },
+    };
+  }
+
+  if (PRESENTATION_CERTIFICATE_TYPES.has(type)) {
+    return {
+      ...DEFAULT_LAYOUT,
+      titleY: 320,
+      nameYWithoutPreName: 495,
+      bodyYWithoutPreName: 625,
+      verseMinY: 880,
+    };
+  }
+
+  if (type === "Recebimento") {
+    return {
+      ...DEFAULT_LAYOUT,
+      bodyCenterX: 680,
+      bodyWidth: 1080,
+      verseCenterX: 680,
+      verseWidth: 980,
+      verseGap: 50,
+    };
+  }
+
+  return DEFAULT_LAYOUT;
+}
 
 function formatLongDate(value: string | Date) {
   return new Date(value).toLocaleDateString("pt-BR", {
@@ -293,6 +397,20 @@ function drawStyledParagraphs(
   return { bottomY: y, lineCount };
 }
 
+function applyParagraphStyles(
+  paragraphs: StyledTextSegment[][],
+  layout: CertificateLayout
+) {
+  return paragraphs.map((paragraph, index) => {
+    if (index !== 1 || !layout.secondParagraphStyle) return paragraph;
+
+    return paragraph.map((segment) => ({
+      ...segment,
+      ...layout.secondParagraphStyle,
+    }));
+  });
+}
+
 function setFont(
   ctx: CanvasRenderingContext2D,
   size: number,
@@ -324,17 +442,93 @@ function fitCenteredText(
   ctx.fillText(text, x, y);
 }
 
+function measureTitle(
+  ctx: CanvasRenderingContext2D,
+  subject: string,
+  titleSize: number,
+  connectorSize: number
+) {
+  const spacing = titleSize * 0.08;
+
+  setFont(ctx, titleSize, FONT_LAVANDERIA_PLAIN);
+  const prefixWidth = ctx.measureText("Certificado").width;
+  const subjectWidth = ctx.measureText(subject).width;
+  setFont(ctx, connectorSize, FONT_SANSATION_BOLD, "700");
+  const connectorWidth = ctx.measureText("de").width;
+
+  return prefixWidth + connectorWidth + subjectWidth + spacing * 2;
+}
+
+function drawCertificateTitle(
+  ctx: CanvasRenderingContext2D,
+  title: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  initialSize: number,
+  minSize: number,
+  color: string
+) {
+  const match = title.match(/^Certificado de (.+)$/);
+  if (!match) {
+    fitCenteredText(
+      ctx,
+      title,
+      x,
+      y,
+      maxWidth,
+      initialSize,
+      minSize,
+      FONT_LAVANDERIA_PLAIN,
+      color
+    );
+    return;
+  }
+
+  let titleSize = initialSize;
+  let connectorSize = Math.round(titleSize * 0.42);
+  let totalWidth = measureTitle(ctx, match[1], titleSize, connectorSize);
+
+  while (titleSize > minSize && totalWidth > maxWidth) {
+    titleSize -= 2;
+    connectorSize = Math.round(titleSize * 0.42);
+    totalWidth = measureTitle(ctx, match[1], titleSize, connectorSize);
+  }
+
+  const spacing = titleSize * 0.08;
+  let currentX = x - totalWidth / 2;
+  ctx.textAlign = "left";
+  ctx.fillStyle = color;
+
+  setFont(ctx, titleSize, FONT_LAVANDERIA_PLAIN);
+  ctx.fillText("Certificado", currentX, y);
+  currentX += ctx.measureText("Certificado").width + spacing;
+
+  setFont(ctx, connectorSize, FONT_SANSATION_BOLD, "700");
+  ctx.fillText("de", currentX, y - titleSize * 0.16);
+  currentX += ctx.measureText("de").width + spacing;
+
+  setFont(ctx, titleSize, FONT_LAVANDERIA_PLAIN);
+  ctx.fillText(match[1], currentX, y);
+  ctx.textAlign = "center";
+}
+
 function drawTextLayout(
   ctx: CanvasRenderingContext2D,
   certificate: CertificatePDFData
 ) {
   const template = getCertificateTemplate(certificate.type);
   const title = getCertificateTitle(certificate.type, certificate.title);
+  const layout = getCertificateLayout(certificate.type);
   const titleColor = template?.titleColor ?? "#110e49";
   const date = formatLongDate(certificate.issueDate);
   const preName = template?.preName ?? "";
   const bodyTemplate = template?.bodyText || certificate.description || "";
   const bodySegments = buildDateHighlightedSegments(bodyTemplate, date, titleColor);
+  const bodyParagraphs = applyParagraphStyles(
+    splitStyledParagraphs(bodySegments),
+    layout
+  );
   const verse = (template?.verse ?? "")
     .replaceAll("[Nome]", certificate.recipientName)
     .replaceAll("[Data]", date);
@@ -342,53 +536,60 @@ function drawTextLayout(
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
 
-  fitCenteredText(
+  drawCertificateTitle(
     ctx,
     title,
     CANVAS_WIDTH / 2,
-    265,
-    1580,
-    148,
-    74,
-    FONT_LAVANDERIA_PLAIN,
+    layout.titleY,
+    layout.titleWidth,
+    layout.titleSize,
+    layout.titleMinSize,
     titleColor
   );
 
   if (preName) {
     setFont(ctx, 38, FONT_SANSATION, "400");
     ctx.fillStyle = "#1f2933";
-    ctx.fillText(preName, CANVAS_WIDTH / 2, 390);
+    ctx.fillText(preName, CANVAS_WIDTH / 2, layout.preNameY);
   }
 
   fitCenteredText(
     ctx,
     certificate.recipientName,
     CANVAS_WIDTH / 2,
-    preName ? 505 : 445,
-    1450,
-    96,
-    56,
+    preName ? layout.nameYWithPreName : layout.nameYWithoutPreName,
+    layout.nameWidth,
+    layout.nameSize,
+    layout.nameMinSize,
     FONT_LAVANDERIA_PLAIN,
     "#111111"
   );
 
-  const bodyStartY = preName ? 610 : 550;
+  const bodyStartY = preName
+    ? layout.bodyYWithPreName
+    : layout.bodyYWithoutPreName;
   const bodyLayout = drawStyledParagraphs(
     ctx,
-    splitStyledParagraphs(bodySegments),
-    CANVAS_WIDTH / 2,
+    bodyParagraphs,
+    layout.bodyCenterX,
     bodyStartY,
-    1540,
-    46,
-    18
+    layout.bodyWidth,
+    layout.bodyLineHeight,
+    layout.paragraphGap
   );
 
   if (verse) {
     setFont(ctx, 38, FONT_LAVANDERIA_PLAIN, "400");
     ctx.fillStyle = "#1a1a1a";
-    const verseLines = wrapText(ctx, verse, 1440);
-    const verseY = Math.max(835, bodyLayout.bottomY + 70);
-    drawCenteredLines(ctx, verseLines, CANVAS_WIDTH / 2, verseY, 48);
+    const verseLines = wrapText(ctx, verse, layout.verseWidth);
+    const verseY = Math.max(layout.verseMinY, bodyLayout.bottomY + layout.verseGap);
+    drawCenteredLines(
+      ctx,
+      verseLines,
+      layout.verseCenterX,
+      verseY,
+      layout.verseLineHeight
+    );
   }
 }
 
