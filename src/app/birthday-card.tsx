@@ -36,10 +36,33 @@ type BirthdayTextTemplate = {
   verse: string;
 };
 
-const FORMAT_CONFIG: Record<BirthdayFormat, { label: string; width: number; height: number; file: string }> = {
-  portrait: { label: "9:16", width: 1080, height: 1920, file: "9x16" },
-  landscape: { label: "16:9", width: 1920, height: 1080, file: "16x9" },
+const FORMAT_CONFIG: Record<
+  BirthdayFormat,
+  { label: string; width: number; height: number; file: string; background: string }
+> = {
+  portrait: {
+    label: "9:16",
+    width: 1080,
+    height: 1920,
+    file: "9x16",
+    background: "/birthday/backgrounds/fundo-9-16.png",
+  },
+  landscape: {
+    label: "16:9",
+    width: 1920,
+    height: 1080,
+    file: "16x9",
+    background: "/birthday/backgrounds/fundo-16-9.png",
+  },
 };
+
+const FONT_SCRIPT = "BirthdayLavanderia";
+const FONT_SANSATION = "BirthdaySansation";
+const FONT_SANSATION_BOLD = "BirthdaySansationBold";
+const GOLD = "#d2ad62";
+const TEXT = "#111111";
+
+let birthdayFontsReady: Promise<void> | null = null;
 
 function getBirthdayTemplate(person: BirthdayPerson): BirthdayTextTemplate {
   const age = person.age ?? 30;
@@ -105,6 +128,26 @@ function loadImage(src: string) {
   });
 }
 
+async function ensureBirthdayFonts() {
+  if (birthdayFontsReady) return birthdayFontsReady;
+
+  birthdayFontsReady = (async () => {
+    if (typeof FontFace === "undefined" || !document?.fonts) return;
+
+    const fontFaces = [
+      new FontFace(FONT_SCRIPT, "url('/certificates/fonts/Lavanderia%20Sturdy.otf')"),
+      new FontFace(FONT_SANSATION, "url('/certificates/fonts/Sansation-Regular.ttf')"),
+      new FontFace(FONT_SANSATION_BOLD, "url('/certificates/fonts/Sansation-Bold.ttf')"),
+    ];
+
+    const loadedFonts = await Promise.all(fontFaces.map((font) => font.load()));
+    loadedFonts.forEach((font) => document.fonts.add(font));
+    await document.fonts.ready;
+  })();
+
+  return birthdayFontsReady;
+}
+
 function drawCoverImage(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
@@ -165,45 +208,134 @@ function fitText(
   maxWidth: number,
   initialSize: number,
   minSize: number,
+  family = FONT_SANSATION_BOLD,
   weight = "700"
 ) {
   let size = initialSize;
-  ctx.font = `${weight} ${size}px "DM Sans", Arial, sans-serif`;
+  ctx.font = `${weight} ${size}px "${family}", "DM Sans", Arial, sans-serif`;
   while (size > minSize && ctx.measureText(text).width > maxWidth) {
     size -= 2;
-    ctx.font = `${weight} ${size}px "DM Sans", Arial, sans-serif`;
+    ctx.font = `${weight} ${size}px "${family}", "DM Sans", Arial, sans-serif`;
   }
 }
 
-function drawInitials(
+function measureLetterSpacedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  letterSpacing: number
+) {
+  return text.split("").reduce((width, char, index) => {
+    return width + ctx.measureText(char).width + (index > 0 ? letterSpacing : 0);
+  }, 0);
+}
+
+function drawLetterSpacedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  letterSpacing: number,
+  align: CanvasTextAlign = "center"
+) {
+  const chars = text.split("");
+  const width = measureLetterSpacedText(ctx, text, letterSpacing);
+  let currentX = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
+
+  chars.forEach((char, index) => {
+    if (index > 0) currentX += letterSpacing;
+    ctx.fillText(char, currentX, y);
+    currentX += ctx.measureText(char).width;
+  });
+}
+
+function wrapLetterSpacedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  letterSpacing: number
+) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+
+  words.forEach((word) => {
+    const testLine = line ? `${line} ${word}` : word;
+    if (
+      !line ||
+      measureLetterSpacedText(ctx, testLine, letterSpacing) <= maxWidth
+    ) {
+      line = testLine;
+      return;
+    }
+
+    lines.push(line);
+    line = word;
+  });
+
+  if (line) lines.push(line);
+  return lines;
+}
+
+function drawWrappedLetterSpacedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  letterSpacing: number,
+  align: CanvasTextAlign = "center"
+) {
+  wrapLetterSpacedText(ctx, text, maxWidth, letterSpacing).forEach((line, index) => {
+    drawLetterSpacedText(ctx, line, x, y + index * lineHeight, letterSpacing, align);
+  });
+}
+
+function drawPhotoPlaceholder(
   ctx: CanvasRenderingContext2D,
   person: BirthdayPerson,
   x: number,
   y: number,
-  radius: number
+  width: number,
+  height: number
 ) {
-  ctx.fillStyle = "#dbeafe";
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillStyle = "#e9eef5";
+  ctx.fillRect(x, y, width, height);
   ctx.fillStyle = "#174a96";
-  ctx.font = `700 ${radius * 0.45}px "DM Sans", Arial, sans-serif`;
+  ctx.font = `700 ${Math.min(width, height) * 0.16}px "${FONT_SANSATION_BOLD}", "DM Sans", Arial, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(person.initials, x, y);
+  ctx.fillText(person.initials, x + width / 2, y + height / 2);
   ctx.textBaseline = "alphabetic";
 }
 
-async function drawAvatar(
+async function drawPolaroidPhoto(
   ctx: CanvasRenderingContext2D,
   person: BirthdayPerson,
   src: string | null,
-  x: number,
-  y: number,
-  radius: number
+  frame: { x: number; y: number; width: number; height: number; padding: number; bottom: number }
 ) {
+  ctx.save();
+  ctx.shadowColor = "rgba(31, 41, 55, 0.18)";
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 8;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.fillRect(frame.x, frame.y, frame.width, frame.height);
+  ctx.restore();
+
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(frame.x, frame.y, frame.width, frame.height);
+
+  const photo = {
+    x: frame.x + frame.padding,
+    y: frame.y + frame.padding,
+    width: frame.width - frame.padding * 2,
+    height: frame.height - frame.padding - frame.bottom,
+  };
+
   if (!src) {
-    drawInitials(ctx, person, x, y, radius);
+    drawPhotoPlaceholder(ctx, person, photo.x, photo.y, photo.width, photo.height);
     return;
   }
 
@@ -211,12 +343,12 @@ async function drawAvatar(
     const image = await loadImage(src);
     ctx.save();
     ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.rect(photo.x, photo.y, photo.width, photo.height);
     ctx.clip();
-    drawCoverImage(ctx, image, x - radius, y - radius, radius * 2, radius * 2);
+    drawCoverImage(ctx, image, photo.x, photo.y, photo.width, photo.height);
     ctx.restore();
   } catch {
-    drawInitials(ctx, person, x, y, radius);
+    drawPhotoPlaceholder(ctx, person, photo.x, photo.y, photo.width, photo.height);
   }
 }
 
@@ -233,7 +365,7 @@ async function generateBirthdayImage({
   format: BirthdayFormat;
   manualPhotoDataUrl: string | null;
 }) {
-  await document.fonts.ready;
+  await ensureBirthdayFonts();
 
   const config = FORMAT_CONFIG[format];
   const canvas = document.createElement("canvas");
@@ -242,85 +374,80 @@ async function generateBirthdayImage({
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas indisponível.");
 
-  const gradient = ctx.createLinearGradient(0, 0, config.width, config.height);
-  gradient.addColorStop(0, "#f8fbff");
-  gradient.addColorStop(0.48, "#ffffff");
-  gradient.addColorStop(1, "#eef5ff");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, config.width, config.height);
-
-  ctx.fillStyle = "#174a96";
-  ctx.fillRect(0, 0, config.width, Math.round(config.height * 0.018));
-  ctx.fillStyle = "#f2b705";
-  ctx.fillRect(0, Math.round(config.height * 0.018), config.width, Math.round(config.height * 0.008));
-
-  ctx.strokeStyle = "rgba(23, 74, 150, 0.12)";
-  ctx.lineWidth = format === "portrait" ? 3 : 4;
-  for (let y = Math.round(config.height * 0.18); y < config.height; y += 72) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(config.width, y - 42);
-    ctx.stroke();
-  }
-
-  const logo = await loadImage("/logo.png").catch(() => null);
-  if (logo) {
-    const logoWidth = format === "portrait" ? 180 : 210;
-    const logoHeight = (logo.height / logo.width) * logoWidth;
-    ctx.drawImage(logo, format === "portrait" ? 70 : 90, format === "portrait" ? 80 : 70, logoWidth, logoHeight);
-  }
+  const background = await loadImage(config.background);
+  ctx.drawImage(background, 0, 0, config.width, config.height);
 
   const photoSrc = manualPhotoDataUrl || person.photoUrl;
-  const titleColor = "#174a96";
-  const gold = "#b98105";
 
   if (format === "portrait") {
-    await drawAvatar(ctx, person, photoSrc, 540, 360, 150);
+    await drawPolaroidPhoto(ctx, person, photoSrc, {
+      x: 234,
+      y: 236,
+      width: 590,
+      height: 835,
+      padding: 18,
+      bottom: 44,
+    });
 
-    ctx.fillStyle = gold;
-    ctx.font = '700 44px "DM Sans", Arial, sans-serif';
+    ctx.fillStyle = TEXT;
+    ctx.font = `700 34px "${FONT_SANSATION_BOLD}", "DM Sans", Arial, sans-serif`;
+    drawLetterSpacedText(ctx, "PARABÉNS", 540, 1130, 24);
+
+    ctx.fillStyle = GOLD;
+    fitText(ctx, person.name, 1040, 116, 66, FONT_SCRIPT, "400");
     ctx.textAlign = "center";
-    ctx.fillText("Feliz aniversário", 540, 610);
+    ctx.fillText(person.name, 540, 1275);
 
-    ctx.fillStyle = titleColor;
-    fitText(ctx, person.name, 850, 76, 44);
-    ctx.fillText(person.name, 540, 705);
+    ctx.fillStyle = TEXT;
+    ctx.font = `400 32px "${FONT_SANSATION}", "DM Sans", Arial, sans-serif`;
+    drawWrappedLetterSpacedText(
+      ctx,
+      message.toUpperCase(),
+      540,
+      1400,
+      810,
+      43,
+      6
+    );
 
-    ctx.fillStyle = "#253044";
-    ctx.font = '500 42px "DM Sans", Arial, sans-serif';
-    drawWrappedText(ctx, message, 540, 840, 820, 58);
-
-    ctx.fillStyle = titleColor;
-    ctx.font = '700 38px "DM Sans", Arial, sans-serif';
-    drawWrappedText(ctx, verse, 540, 1420, 780, 54);
-
-    ctx.fillStyle = "#5b6472";
-    ctx.font = '600 28px "DM Sans", Arial, sans-serif';
-    ctx.fillText("Igreja Evangélica Avivamento Bíblico", 540, 1705);
+    ctx.fillStyle = GOLD;
+    ctx.font = `400 38px "${FONT_SCRIPT}", "DM Sans", Arial, sans-serif`;
+    drawWrappedText(ctx, verse, 540, 1635, 780, 54);
   } else {
-    await drawAvatar(ctx, person, photoSrc, 450, 450, 180);
+    await drawPolaroidPhoto(ctx, person, photoSrc, {
+      x: 182,
+      y: 156,
+      width: 535,
+      height: 760,
+      padding: 16,
+      bottom: 28,
+    });
 
+    ctx.fillStyle = TEXT;
+    ctx.font = `700 34px "${FONT_SANSATION_BOLD}", "DM Sans", Arial, sans-serif`;
+    drawLetterSpacedText(ctx, "PARABÉNS!", 980, 292, 28);
+
+    ctx.fillStyle = GOLD;
+    fitText(ctx, person.name, 1040, 132, 72, FONT_SCRIPT, "400");
     ctx.textAlign = "left";
-    ctx.fillStyle = gold;
-    ctx.font = '700 48px "DM Sans", Arial, sans-serif';
-    ctx.fillText("Feliz aniversário", 760, 255);
+    ctx.fillText(person.name, 750, 455);
 
-    ctx.fillStyle = titleColor;
-    fitText(ctx, person.name, 960, 86, 48);
-    ctx.textAlign = "left";
-    ctx.fillText(person.name, 760, 355);
+    ctx.fillStyle = TEXT;
+    ctx.font = `400 33px "${FONT_SANSATION}", "DM Sans", Arial, sans-serif`;
+    drawWrappedLetterSpacedText(
+      ctx,
+      message.toUpperCase(),
+      750,
+      550,
+      980,
+      40,
+      9,
+      "left"
+    );
 
-    ctx.fillStyle = "#253044";
-    ctx.font = '500 40px "DM Sans", Arial, sans-serif';
-    drawWrappedText(ctx, message, 760, 470, 900, 56, "left");
-
-    ctx.fillStyle = titleColor;
-    ctx.font = '700 34px "DM Sans", Arial, sans-serif';
-    drawWrappedText(ctx, verse, 760, 780, 860, 48, "left");
-
-    ctx.fillStyle = "#5b6472";
-    ctx.font = '600 26px "DM Sans", Arial, sans-serif';
-    ctx.fillText("Igreja Evangélica Avivamento Bíblico", 760, 950);
+    ctx.fillStyle = GOLD;
+    ctx.font = `400 34px "${FONT_SCRIPT}", "DM Sans", Arial, sans-serif`;
+    drawWrappedText(ctx, verse, 750, 705, 980, 48, "left");
   }
 
   return new Promise<Blob>((resolve, reject) => {
