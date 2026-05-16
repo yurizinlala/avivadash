@@ -70,8 +70,8 @@ const DEFAULT_LAYOUT: CertificateLayout = {
   nameYWithPreName: 505,
   nameYWithoutPreName: 445,
   nameWidth: 1450,
-  nameSize: 96,
-  nameMinSize: 56,
+  nameSize: 100,
+  nameMinSize: 58,
   bodyYWithPreName: 610,
   bodyYWithoutPreName: 550,
   bodyCenterX: CANVAS_WIDTH / 2,
@@ -82,7 +82,7 @@ const DEFAULT_LAYOUT: CertificateLayout = {
   verseWidth: 1440,
   verseMinY: 835,
   verseGap: 70,
-  verseLineHeight: 48,
+  verseLineHeight: 50,
 };
 
 const MINISTERIAL_CERTIFICATE_TYPES = new Set([
@@ -101,15 +101,15 @@ function getCertificateLayout(type: string): CertificateLayout {
   if (MINISTERIAL_CERTIFICATE_TYPES.has(type)) {
     return {
       ...DEFAULT_LAYOUT,
-      titleY: 320,
-      preNameY: 435,
-      nameYWithPreName: 545,
-      bodyYWithPreName: 665,
+      titleY: 338,
+      preNameY: 453,
+      nameYWithPreName: 563,
+      bodyYWithPreName: 683,
       paragraphGap: 60,
       bodyLineHeight: 48,
       secondParagraphStyle: {
         family: FONT_LAVANDERIA_PLAIN,
-        size: 34,
+        size: 36,
         color: "#1f2933",
         weight: "400",
       },
@@ -119,10 +119,10 @@ function getCertificateLayout(type: string): CertificateLayout {
   if (PRESENTATION_CERTIFICATE_TYPES.has(type)) {
     return {
       ...DEFAULT_LAYOUT,
-      titleY: 320,
-      nameYWithoutPreName: 495,
-      bodyYWithoutPreName: 625,
-      verseMinY: 880,
+      titleY: 338,
+      nameYWithoutPreName: 513,
+      bodyYWithoutPreName: 643,
+      verseMinY: 898,
     };
   }
 
@@ -575,7 +575,7 @@ function drawTextLayout(
   );
 
   if (verse) {
-    setFont(ctx, 38, FONT_LAVANDERIA_PLAIN, "400");
+    setFont(ctx, 40, FONT_LAVANDERIA_PLAIN, "400");
     ctx.fillStyle = "#1a1a1a";
     const verseLines = wrapText(ctx, verse, layout.verseWidth);
     const verseY = Math.max(layout.verseMinY, bodyLayout.bottomY + layout.verseGap);
