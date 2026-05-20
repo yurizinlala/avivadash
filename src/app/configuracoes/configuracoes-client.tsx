@@ -933,18 +933,23 @@ export function ConfiguracoesClient({
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                   {editingLocationId && (
                     <Button
                       type="button"
                       variant="outline"
                       onClick={resetLocationForm}
-                      className="flex-1"
+                      className="h-10 w-full sm:w-auto"
                     >
                       Cancelar edição
                     </Button>
                   )}
-                  <Button type="submit" variant="brand" disabled={savingLocation} className="flex-1">
+                  <Button
+                    type="submit"
+                    variant="brand"
+                    disabled={savingLocation}
+                    className="h-10 w-full gap-2 rounded-xl sm:w-auto"
+                  >
                     {savingLocation ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
@@ -963,7 +968,7 @@ export function ConfiguracoesClient({
                 ) : (
                   churchLocations.map((location) => (
                     <div key={location.id} className="rounded-xl bg-surface-high p-4">
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-sm font-semibold text-foreground">
@@ -978,7 +983,7 @@ export function ConfiguracoesClient({
                             {location.address}
                           </p>
                         </div>
-                        <div className="flex shrink-0 gap-1">
+                        <div className="flex shrink-0 justify-end gap-2 sm:gap-1">
                           <Button
                             type="button"
                             size="icon-sm"

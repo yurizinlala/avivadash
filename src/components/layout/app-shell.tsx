@@ -4,6 +4,7 @@ import React from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import { GlobalSearch } from "@/components/global-search";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -65,13 +66,15 @@ export function AppShell({ children, notifications = [], userName }: AppShellPro
         />
 
         <main className={cn(
-            "min-h-[calc(100vh-4rem)] transition-all duration-300 p-4 sm:p-6 lg:p-8",
+            "min-h-[calc(100dvh-4rem)] pb-[calc(6rem+env(safe-area-inset-bottom))] pl-4 pr-4 pt-4 transition-all duration-300 sm:p-6 lg:p-8",
             sidebarCollapsed ? "lg:ml-[72px]" : "lg:ml-[250px]",
             "ml-0"
           )}
         >
           {children}
         </main>
+
+        {!mobileOpen && <MobileBottomNav />}
 
         {/* Global Search Modal */}
         <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />

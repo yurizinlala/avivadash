@@ -70,8 +70,8 @@ function createTextLine(text: string) {
 function createPopupContent(cell: CellMapData) {
   const container = document.createElement("div");
   Object.assign(container.style, {
-    minWidth: "200px",
-    maxWidth: "240px",
+    width: "260px",
+    overflow: "hidden",
     fontFamily: "system-ui, -apple-system, sans-serif",
   });
 
@@ -80,29 +80,35 @@ function createPopupContent(cell: CellMapData) {
     image.src = cell.coverUrl;
     image.alt = cell.name;
     Object.assign(image.style, {
-      width: "calc(100% + 24px)",
-      height: "80px",
+      display: "block",
+      width: "100%",
+      height: "120px",
       objectFit: "cover",
-      borderRadius: "8px 8px 0 0",
-      margin: "-12px -12px 8px -12px",
+      objectPosition: "center",
+      margin: "0 0 12px 0",
     });
     container.appendChild(image);
   }
 
+  const content = document.createElement("div");
+  Object.assign(content.style, {
+    padding: cell.coverUrl ? "0 14px 14px" : "14px",
+  });
+
   const title = document.createElement("p");
   title.textContent = cell.name;
   Object.assign(title.style, {
-    fontSize: "13px",
+    fontSize: "15px",
     fontWeight: "700",
     margin: "0 0 4px 0",
     color: "#1a1a1a",
   });
-  container.appendChild(title);
+  content.appendChild(title);
 
-  container.appendChild(createTextLine(`Líder: ${cell.leaderName}`));
+  content.appendChild(createTextLine(`Líder: ${cell.leaderName}`));
 
   if (cell.dayOfWeek) {
-    container.appendChild(
+    content.appendChild(
       createTextLine(`Dia: ${cell.dayOfWeek}${cell.time ? ` às ${cell.time}` : ""}`)
     );
   }
@@ -110,13 +116,14 @@ function createPopupContent(cell: CellMapData) {
   if (cell.address) {
     const address = createTextLine(`Endereço: ${cell.address}`);
     address.style.margin = "4px 0 0 0";
-    container.appendChild(address);
+    content.appendChild(address);
   }
 
   const members = createTextLine(`Membros: ${cell.memberCount}`);
   members.style.color = "#888";
   members.style.margin = "4px 0 0 0";
-  container.appendChild(members);
+  content.appendChild(members);
+  container.appendChild(content);
 
   return container;
 }
@@ -161,9 +168,20 @@ export function CellMap({
   const [selectedCell, setSelectedCell] = React.useState<CellMapData | null>(null);
   const [adjustingCellId, setAdjustingCellId] = React.useState<string | null>(null);
   const [draftCoordinates, setDraftCoordinates] = React.useState<DraftCoordinates | null>(null);
+  const [isMobileMap, setIsMobileMap] = React.useState(false);
 
   React.useEffect(() => {
     setMounted(true);
+  }, []);
+
+  React.useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const updateMobileState = () => setIsMobileMap(mediaQuery.matches);
+
+    updateMobileState();
+    mediaQuery.addEventListener("change", updateMobileState);
+
+    return () => mediaQuery.removeEventListener("change", updateMobileState);
   }, []);
 
   React.useEffect(() => {
@@ -240,13 +258,20 @@ export function CellMap({
           draggable: isAdjusting,
         }).addTo(layer);
 
-        marker.bindPopup(createPopupContent(cell), {
-          maxWidth: 260,
-          className: "cell-popup",
-        });
+        if (!isMobileMap) {
+          marker.bindPopup(createPopupContent(cell), {
+            maxWidth: 260,
+            className: "cell-popup",
+          });
+        }
 
         marker.on("click", () => {
           setSelectedCell(cell);
+          if (isMobileMap) {
+            mapInstance.current?.panTo([coordinates.latitude, coordinates.longitude], {
+              animate: true,
+            });
+          }
         });
 
         if (isAdjusting) {
@@ -274,7 +299,7 @@ export function CellMap({
     return () => {
       cancelled = true;
     };
-  }, [leafletReady, cells, adjustingCellId, draftCoordinates]);
+  }, [leafletReady, cells, adjustingCellId, draftCoordinates, isMobileMap]);
 
   React.useEffect(() => {
     if (!leafletReady || !mapInstance.current || !adjustingCellId) return;
@@ -323,7 +348,7 @@ export function CellMap({
 
   if (!mounted) {
     return (
-      <div className="flex h-[calc(100vh-14rem)] items-center justify-center rounded-xl bg-surface-high">
+      <div className="flex h-[calc(100dvh-14rem)] items-center justify-center rounded-xl bg-surface-high">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -331,7 +356,7 @@ export function CellMap({
 
   if (cells.length === 0 && pendingGeocode === 0) {
     return (
-      <div className="flex h-[calc(100vh-14rem)] flex-col items-center justify-center rounded-xl bg-surface-high p-8 text-center">
+      <div className="flex h-[calc(100dvh-14rem)] flex-col items-center justify-center rounded-xl bg-surface-high p-8 text-center">
         <div className="icon-tile icon-tile-primary mb-4 h-14 w-14">
           <Navigation className="h-7 w-7" />
         </div>
@@ -349,7 +374,7 @@ export function CellMap({
   return (
     <div className="space-y-4">
       {pendingGeocode > 0 && (
-        <div className="app-card flex items-center justify-between gap-4 border-gold/20 bg-gold/10 p-4">
+        <div className="app-card flex flex-col gap-4 border-gold/20 bg-gold/10 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-medium text-foreground">
               {pendingGeocode} célula(s) com endereço mas sem localização no mapa
@@ -361,7 +386,7 @@ export function CellMap({
           <Button
             size="sm"
             variant="brand"
-            className="gap-2"
+            className="w-full gap-2 sm:w-auto"
             onClick={onGeocode}
             disabled={geocoding}
           >
@@ -395,14 +420,97 @@ export function CellMap({
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_300px]">
         <div
           className={cn(
-            "relative isolate z-0 h-[calc(100vh-18rem)] min-h-[400px] overflow-hidden rounded-xl border border-border shadow-ambient",
+            "relative isolate z-0 h-[36dvh] min-h-[300px] overflow-hidden rounded-xl border border-border shadow-ambient md:h-[calc(100dvh-18rem)] md:min-h-[400px]",
             adjustingCellId && "cursor-crosshair ring-2 ring-primary/20"
           )}
         >
           <div ref={mapRef} className="h-full w-full" />
+
+          {selectedCell && (
+            <div className="absolute inset-x-3 bottom-3 z-[900] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl md:hidden">
+              {selectedCell.coverUrl && (
+                <div className="relative h-28 w-full overflow-hidden">
+                  <Image
+                    src={selectedCell.coverUrl}
+                    alt={selectedCell.name}
+                    fill
+                    sizes="(max-width: 768px) 100vw"
+                    unoptimized
+                    className="object-cover"
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedCell(null)}
+                className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-background/90 text-muted-foreground shadow-sm"
+                aria-label="Fechar detalhes da célula"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <div className="space-y-2 p-4">
+                <div>
+                  <p className="text-base font-heading font-bold leading-tight text-foreground">
+                    {selectedCell.name}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Líder: {selectedCell.leaderName}
+                  </p>
+                </div>
+                {(selectedCell.dayOfWeek || selectedCell.time) && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      {selectedCell.dayOfWeek}
+                      {selectedCell.time ? ` às ${selectedCell.time}` : ""}
+                    </span>
+                  </div>
+                )}
+                {selectedCell.address && (
+                  <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                    Endereço: {selectedCell.address}
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
+                    <Users className="h-3.5 w-3.5" />
+                    <span>{selectedCell.memberCount} membros</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-1.5 rounded-lg px-2 text-xs"
+                      disabled={!onSaveCoordinates}
+                      onClick={() => startAdjusting(selectedCell)}
+                    >
+                      <Crosshair className="h-3.5 w-3.5" />
+                      Ajustar
+                    </Button>
+                    {onRefreshCellGeocode && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 gap-1.5 rounded-lg px-2 text-xs"
+                        disabled={refreshingCellId === selectedCell.id}
+                        onClick={() => void onRefreshCellGeocode(selectedCell.id)}
+                      >
+                        {refreshingCellId === selectedCell.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        Recalcular
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="max-h-[calc(100vh-18rem)] space-y-4 overflow-y-auto pr-2">
+        <div className="hidden max-h-[calc(100dvh-18rem)] space-y-4 overflow-y-auto pr-2 md:block">
           <p className="px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             {cells.length} célula(s) no mapa
           </p>

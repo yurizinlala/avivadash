@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { DM_Sans, Space_Grotesk } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AppShell } from "@/components/layout/app-shell";
@@ -22,9 +22,16 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "IEAB Gestão — Sistema de Gestão Eclesiástica",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://avivadash.vercel.app"
+  ),
+  applicationName: "AvivaDash",
+  title: {
+    default: "AvivaDash — Gestão IEAB",
+    template: "%s | AvivaDash",
+  },
   description:
-    "Plataforma moderna de administração da Igreja Evangélica Avivamento Bíblico. Gerencie membros, células, agenda e relatórios em um só lugar.",
+    "Sistema de gestão eclesiástica da Igreja Evangélica Avivamento Bíblico para membros, células, agenda e relatórios.",
   keywords: [
     "gestão eclesiástica",
     "igreja",
@@ -33,6 +40,37 @@ export const metadata: Metadata = {
     "células",
     "relatórios",
   ],
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "AvivaDash",
+    statusBarStyle: "default",
+    startupImage: "/icons/splash-2048.png",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icons/apple-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#1d4994" },
+    { media: "(prefers-color-scheme: dark)", color: "#121212" },
+  ],
+  colorScheme: "light dark",
 };
 
 export default async function RootLayout({

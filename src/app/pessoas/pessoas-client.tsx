@@ -35,10 +35,10 @@ import {
 } from "@/components/ui/select";
 import {
   Sheet,
-  SheetContent,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { ResponsiveSheetContent } from "@/components/ui/responsive-sheet";
 
 import { toast } from "sonner";
 import { createPerson, updatePerson, deletePerson } from "@/lib/actions/person-actions";
@@ -966,7 +966,7 @@ export function PessoasClient({
 
       {/* Registration Sheet (Side Panel) */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-lg p-0 border-0 bg-card flex flex-col h-full">
+        <ResponsiveSheetContent className="w-full sm:max-w-lg p-0 border-0 bg-card flex flex-col h-full">
           <SheetHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <div className="flex items-center justify-between">
               <div>
@@ -1636,7 +1636,7 @@ export function PessoasClient({
               {selectedPerson ? "Salvar Alterações" : "Cadastrar"}
             </Button>
           </div>
-        </SheetContent>
+        </ResponsiveSheetContent>
       </Sheet>
 
       {/* Confirm Delete Dialog */}

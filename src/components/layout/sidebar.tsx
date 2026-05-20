@@ -130,7 +130,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
 
   return (
     <aside className={cn(
-        "fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 ease-in-out",
+        "fixed left-0 top-0 z-50 flex h-[100dvh] flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 ease-in-out",
         // Desktop
         collapsed ? "lg:w-[72px]" : "lg:w-[250px]",
         // Mobile: slide in/out
@@ -173,14 +173,14 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {NAV_ITEMS.map((item) => (
           <NavLink key={item.href} item={item} />
         ))}
       </nav>
 
       {/* Bottom Section */}
-      <div className="space-y-1 border-t border-sidebar-border px-3 py-4">
+      <div className="shrink-0 space-y-1 border-t border-sidebar-border px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4">
         {BOTTOM_ITEMS.map((item) => (
           <NavLink key={item.href} item={item} />
         ))}

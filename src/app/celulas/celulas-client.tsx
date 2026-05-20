@@ -16,8 +16,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle,
+  Sheet, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
+import { ResponsiveSheetContent } from "@/components/ui/responsive-sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -613,7 +614,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
       </div>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-md md:max-w-xl p-0 border-l border-border bg-card shadow-2xl flex flex-col h-full">
+        <ResponsiveSheetContent className="w-full sm:max-w-md md:max-w-xl p-0 border-l border-border bg-card shadow-2xl flex flex-col h-full">
           <SheetHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <div className="flex items-center justify-between">
               <div>
@@ -1184,7 +1185,7 @@ export function CelulasClient({ initialCells, stats, people }: CelulasClientProp
               </Button>
             </div>
           )}
-        </SheetContent>
+        </ResponsiveSheetContent>
       </Sheet>
 
       <ConfirmDeleteDialog

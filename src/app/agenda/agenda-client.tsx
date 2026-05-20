@@ -16,8 +16,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle,
+  Sheet, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
+import { ResponsiveSheetContent } from "@/components/ui/responsive-sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 import { toast } from "sonner";
@@ -999,7 +1000,7 @@ export function AgendaClient({
           if (!open) setNewEventDate(null);
         }}
       >
-        <SheetContent className="w-full sm:max-w-md p-0 border-0 bg-card flex flex-col h-full">
+        <ResponsiveSheetContent className="w-full sm:max-w-md p-0 border-0 bg-card flex flex-col h-full">
           <SheetHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
             <div className="flex items-center justify-between">
               <div>
@@ -1352,7 +1353,7 @@ export function AgendaClient({
               {selectedEvent ? "Salvar Alterações" : "Criar Evento"}
             </Button>
           </div>
-        </SheetContent>
+        </ResponsiveSheetContent>
       </Sheet>
 
       {/* Confirm Delete Dialog */}
