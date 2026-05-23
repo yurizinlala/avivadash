@@ -170,17 +170,17 @@ const STATUS_STYLES: Record<string, string> = {
 
 const ECCLESIASTICAL_ROLE_LABELS: Record<EcclesiasticalRole, string> = {
   NENHUM: "Nenhum",
-  DIACONO: "DiÃ¡cono",
+  DIACONO: "Di\u00e1cono",
   DIACONISA: "Diaconisa",
-  PRESBITERO: "PresbÃ­tero",
-  MISSIONARIO: "MissionÃ¡rio",
-  MISSIONARIA: "MissionÃ¡ria",
+  PRESBITERO: "Presb\u00edtero",
+  MISSIONARIO: "Mission\u00e1rio",
+  MISSIONARIA: "Mission\u00e1ria",
   PASTOR: "Pastor",
   PASTORA: "Pastora",
   EVANGELISTA: "Evangelista",
   OBREIRO: "Obreiro",
   OBREIRA: "Obreira",
-  LIDER_CELULA: "LÃ­der de CÃ©lula",
+  LIDER_CELULA: "L\u00edder de C\u00e9lula",
 };
 
 function getInitials(name: string): string {
@@ -1221,11 +1221,32 @@ export function PessoasClient({
                     {formData.children.map((child, index) => {
                       const suggestions = getChildSuggestions(child);
                       return (
-                        <div key={child.key} className="rounded-xl bg-surface-high p-3">
-                          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_170px_auto] md:items-end">
-                            <div className="relative">
-                              <Label className="text-xs text-muted-foreground">
+                        <div key={child.key} className="rounded-2xl bg-surface-high p-4 sm:p-5">
+                          <div className="mb-4 flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground">
                                 Filho {index + 1}
+                              </p>
+                              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                                Busque uma pessoa cadastrada ou informe os dados manualmente.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Remover filho"
+                              onClick={() => removeChild(child.key)}
+                              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_190px] lg:items-start">
+                            <div className="relative min-w-0">
+                              <Label className="text-xs text-muted-foreground">
+                                Nome do filho
                               </Label>
                               <div className="relative mt-1.5">
                                 <Input
@@ -1242,13 +1263,13 @@ export function PessoasClient({
                                     });
                                     setOpenChildKey(child.key);
                                   }}
-                                  className="h-10 rounded-xl bg-background border-0 pl-10 focus-visible:ring-2 focus-visible:ring-primary/20"
+                                  className="h-11 rounded-xl bg-background border-0 pl-10 focus-visible:ring-2 focus-visible:ring-primary/20"
                                 />
                                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                               </div>
 
                               {openChildKey === child.key && suggestions.length > 0 && (
-                                <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg">
+                                <div className="absolute left-0 right-0 z-30 mt-2 max-h-60 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
                                   {suggestions.map((person) => (
                                     <button
                                       key={person.id}
@@ -1271,7 +1292,7 @@ export function PessoasClient({
                                           getInitials(person.fullName)
                                         )}
                                       </div>
-                                      <div className="min-w-0">
+                                      <div className="min-w-0 flex-1">
                                         <p className="truncate text-sm font-medium text-foreground">
                                           {person.fullName}
                                         </p>
@@ -1297,22 +1318,11 @@ export function PessoasClient({
                                   updateChild(child.key, { manualBirthDate: e.target.value })
                                 }
                                 className={cn(
-                                  "mt-1.5 h-10 rounded-xl bg-background border-0 focus-visible:ring-2 focus-visible:ring-primary/20",
+                                  "mt-1.5 h-11 rounded-xl bg-background border-0 focus-visible:ring-2 focus-visible:ring-primary/20",
                                   child.childPersonId && "opacity-60"
                                 )}
                               />
                             </div>
-
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              aria-label="Remover filho"
-                              onClick={() => removeChild(child.key)}
-                              className="h-10 w-10 text-muted-foreground hover:text-destructive"
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
                           </div>
                         </div>
                       );
