@@ -216,6 +216,13 @@
     @apply font-sans scroll-smooth;
   }
 
+  @media (max-width: 1023px) {
+    html,
+    body {
+      background-color: var(--card);
+    }
+  }
+
   /* Smooth theme transitions */
   html,
   body,

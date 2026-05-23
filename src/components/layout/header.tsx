@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Bell, LogOut, Menu, Search, Cake, Calendar, UserPlus, X } from "lucide-react";
+import { Bell, LogOut, Search, Cake, Calendar, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -13,13 +13,12 @@ import type { Notification } from "@/lib/actions/notification-actions";
 
 interface HeaderProps {
   sidebarCollapsed: boolean;
-  onMobileMenuToggle: () => void;
   onSearchOpen?: () => void;
   notifications?: Notification[];
   userName?: string;
 }
 
-export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, notifications = [], userName }: HeaderProps) {
+export function Header({ sidebarCollapsed, onSearchOpen, notifications = [], userName }: HeaderProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
@@ -91,18 +90,8 @@ export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, not
         "ml-0"
       )}
     >
-      {/* Left — Mobile Menu + Search */}
+      {/* Left — Search */}
       <div className="flex items-center gap-3">
-        {/* Mobile hamburger */}
-        <Button
-          variant="ghost"
-          size="icon" className="lg:hidden h-9 w-9 rounded-xl"
-          onClick={onMobileMenuToggle}
-          aria-label="Abrir menu"
-        >
-          <Menu className="h-5 w-5 text-muted-foreground" />
-        </Button>
-
         <button
           onClick={onSearchOpen} className="relative hidden md:flex items-center cursor-pointer group"
         >
@@ -136,7 +125,7 @@ export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, not
 
           {/* Notification Panel */}
           {showNotifications && (
-            <div className="app-card absolute right-0 top-full z-50 mt-2 w-[min(calc(100vw-2rem),430px)] overflow-hidden animate-in fade-in-0 slide-in-from-top-2 duration-200">
+            <div className="app-card fixed left-3 right-3 top-[4.75rem] z-50 max-h-[calc(100dvh-6rem)] overflow-hidden animate-in fade-in-0 slide-in-from-top-2 duration-200 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[min(calc(100vw-2rem),430px)]">
               <div className="flex items-center justify-between p-4 border-b border-border">
                 <h3 className="text-sm font-heading font-semibold text-foreground">
                   Notificações
@@ -146,7 +135,7 @@ export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, not
                 </span>
               </div>
 
-              <div className="max-h-[320px] overflow-y-auto">
+              <div className="max-h-[calc(100dvh-12rem)] overflow-y-auto sm:max-h-[360px]">
                 {activeNotifications.length === 0 ? (
                   <div className="p-8 text-center">
                     <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
@@ -163,19 +152,21 @@ export function Header({ sidebarCollapsed, onMobileMenuToggle, onSearchOpen, not
                         {notifIcon[notif.type]}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-foreground">
-                          {notif.title}
-                        </p>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
+                            {notif.title}
+                          </p>
+                          <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground/60">
+                            {notif.time}
+                          </span>
+                        </div>
                         <p className="mt-0.5 whitespace-normal break-words text-xs leading-relaxed text-muted-foreground">
                           {notif.description}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-start gap-1">
-                        <span className="text-xs text-muted-foreground/60">
-                          {notif.time}
-                        </span>
                         <button
-                          onClick={() => dismissNotification(notif.id)} className="opacity-0 group-hover:opacity-100 h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-all"
+                          onClick={() => dismissNotification(notif.id)} className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-100 transition-all hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100"
                           aria-label="Descartar"
                         >
                           <X className="h-3 w-3" />

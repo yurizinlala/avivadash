@@ -642,11 +642,12 @@ export function CertificadosClient({ initialCertificates, people }: Certificados
             </div>
           </div>
 
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Button
               type="button"
               variant="outline"
-              className="h-10 flex-1 rounded-xl border-border"
+              size="lg"
+              className="w-full"
               onClick={() => {
                 setFormData({
                   type: selectedTemplate.id,
@@ -660,7 +661,7 @@ export function CertificadosClient({ initialCertificates, people }: Certificados
             >
               Limpar Campos
             </Button>
-            <Button type="submit" variant="brand" disabled={saving} className="h-10 flex-1">
+            <Button type="submit" variant="brand" size="lg" disabled={saving} className="w-full">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Emitir Certificado
             </Button>

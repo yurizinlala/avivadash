@@ -44,7 +44,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "AvivaDash",
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     startupImage: "/icons/splash-2048.png",
   },
   formatDetection: {
@@ -67,7 +67,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#1d4994" },
+    { media: "(prefers-color-scheme: light)", color: "#fcf9f8" },
     { media: "(prefers-color-scheme: dark)", color: "#121212" },
   ],
   colorScheme: "light dark",

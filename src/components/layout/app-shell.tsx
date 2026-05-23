@@ -59,7 +59,6 @@ export function AppShell({ children, notifications = [], userName }: AppShellPro
 
         <Header
           sidebarCollapsed={sidebarCollapsed}
-          onMobileMenuToggle={() => setMobileOpen(true)}
           onSearchOpen={() => setSearchOpen(true)}
           notifications={notifications}
           userName={userName}
